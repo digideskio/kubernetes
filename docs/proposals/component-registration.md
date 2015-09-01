@@ -31,7 +31,7 @@ Documentation for other releases can be found at
 
 <!-- END MUNGE: UNVERSIONED_WARNING -->
 
-### Proposal: Component Registration
+# Proposal: Component Registration
 
 ## Abstract
 
@@ -56,7 +56,7 @@ As a k8s operator, I want a single endpoint (and kubectl command) where I can se
 
 Note: The endpoint should contain cause where possible, but at least the current condition of the components.
 
-#### Notification
+### Notification
 
 As a k8s operator, I want to be notified when the cluster requires human intervention so that I can intervene.
 
@@ -64,13 +64,13 @@ As an external notification system (e.g. PagerDuty), I want an endpoint that res
 
 Note: What condition requires human intervention is not a rule set that can be hard-coded, is likely to be different for each cloud platform, changes based on component configuration, and is likely to require a time-series database.
 
-#### Reporting
+### Reporting
 
 As a k8s operator, I want to see a report/graph of the readiness/uptime/availability of the cluster over time so that I can make/satisfy SLAs.
 
 Note: At least requires a time-series database and probably a reporting engine.
 
-#### Self-Healing
+### Self-Healing
 
 As an k8s operator, I want the cluster to self-heal when individual components crash so that I don't get notified or need to intervene.
 
