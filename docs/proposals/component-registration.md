@@ -33,6 +33,32 @@ Documentation for other releases can be found at
 
 # Proposal: Component Registration
 
+## Table of Contents
+
+<!-- BEGIN MUNGE: GENERATED_TOC -->
+
+- [Proposal: Component Registration](#proposal-component-registration)
+  - [Table of Contents](#table-of-contents)
+  - [Abstract](#abstract)
+  - [Use Cases](#use-cases)
+    - [Deployment](#deployment)
+    - [Debugging](#debugging)
+    - [Notification](#notification)
+    - [Reporting](#reporting)
+    - [Self-Healing](#self-healing)
+  - [Design](#design)
+    - [API Changes](#api-changes)
+      - [Component API](#component-api)
+      - [ComponentStatuses API](#componentstatuses-api)
+    - [Kubectl (CLI)](#kubectl-cli)
+    - [Storage](#storage)
+    - [Status Updates](#status-updates)
+  - [History](#history)
+  - [Example](#example)
+  - [Next Steps](#next-steps)
+
+<!-- END MUNGE: GENERATED_TOC -->
+
 ## Abstract
 
 Kubernetes was designed to be extensible from the start, but one factor currently limits that capability: the hardcoding of what defines a Kubernetes cluster. To reach enterprise-class capabilities (high availability, notifications, self-healing, reporting, and maintainability) Kubernetes first needs to support dynamic component registration and readiness probes.
