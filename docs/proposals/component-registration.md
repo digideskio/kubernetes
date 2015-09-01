@@ -99,6 +99,125 @@ Group components by type, to allow multiple instances of each type, to enable HA
 
 Use the existing name generator with component type as the prefix to ensure component names are unique. Return the generated name in the create response.
 
+#### Component API
+
+The following is a draft of how the Component model might look.
+
+```
+// ComponentType is the name of a group of one or more component instances
+type ComponentType string
+
+// ComponentSpec defines a component and how to verify its status
+type ComponentSpec struct {
+	// Type of the component
+	Type ComponentType `json:"type"`
+	// Periodic probe of component liveness.
+	LivenessProbe *Probe `json:"livenessProbe,omitempty"`
+	// Periodic probe of component readiness.
+	ReadinessProbe *Probe `json:"readinessProbe,omitempty"`
+}
+
+// ComponentConditionType describes a type of component condition
+type ComponentConditionType string
+
+const (
+	// ComponentAlive indicates that a component is running
+	ComponentAlive ComponentConditionType = "Alive"
+	// ComponentReady indicates that a component is ready for use
+	ComponentReady ComponentConditionType = "Ready"
+)
+
+// ComponentCondition describes one aspect of the state of a component
+type ComponentCondition struct {
+	// Type of condition: Pending, Running, or Terminated
+	Type ComponentConditionType `json:"type"`
+	// Status of the condition: True, False, or Unknown
+	Status ConditionStatus `json:"status"`
+	// Reason for the transition to the current status (machine-readable)
+	Reason string `json:"reason,omitempty"`
+	// Message that describes the current status (human-readable)
+	Message string `json:"message,omitempty"`
+}
+
+// ComponentStatus describes the status of a component
+type ComponentStatus struct {
+	// Conditions of the component
+	Conditions []ComponentCondition `json:"conditions,omitempty"`
+	// LastUpdateTime of the component status, regardless of previous status.
+	LastUpdateTime util.Time `json:"lastUpdateTime,omitempty"`
+	// LastTransitionTime of the component status, from a different phase and/or condition
+	LastTransitionTime util.Time `json:"lastTransitionTime,omitempty"`
+}
+
+// Component describes an instance of a specific micro-service, along with its definition and last known status
+type Component struct {
+	TypeMeta `json:",inline"`
+	// Standard object's metadata.
+	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
+	ObjectMeta `json:"metadata,omitempty"`
+	// Spec defines the behavior of a component and how to verify its status.
+	// http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status
+	Spec ComponentSpec `json:"spec"`
+	// Status defines the component's last known state.
+	// http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status
+	Status ComponentStatus `json:"status"`
+}
+
+// ComponentList describes a list of components
+type ComponentList struct {
+	TypeMeta `json:",inline"`
+	// Standard list metadata.
+	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds
+	ListMeta `json:"metadata,omitempty"`
+	// Items is a list of component objects.
+	Items []Component `json:"items"`
+}
+```
+
+#### ComponentStatuses API
+
+In order the make room for the new Component models, the existing ComponentStatus models need to be renamed. This should be reverse compatible for the REST API user, but will break compilation of any third part components using the model objects directly.
+
+The renamed ComponentStatuses API should then be deprecated. Minimally, deprecation could be done via the model comments, which are used to generate the API docs.
+
+```
+// Type and constants for component health validation.
+// Deprecated: replaced by ComponentConditionType
+type ComponentStatusesConditionType string
+
+// These are the valid conditions for the component condition type.
+const (
+	ComponentStatusesHealthy ComponentStatusesConditionType = "Healthy"
+)
+
+// ComponentStatusesCondition describes one aspect of the state of a component.
+// Deprecated: replaced by ComponentCondition
+type ComponentStatusesCondition struct {
+	Type    ComponentStatusesConditionType `json:"type"`
+	Status  ConditionStatus                `json:"status"`
+	Message string                         `json:"message,omitempty"`
+	Error   string                         `json:"error,omitempty"`
+}
+
+// ComponentStatuses (and ComponentStatusesList) holds the cluster validation info.
+// Deprecated: replaced by ComponentStatus
+type ComponentStatuses struct {
+	TypeMeta   `json:",inline"`
+	ObjectMeta `json:"metadata,omitempty"`
+
+	Conditions []ComponentStatusesCondition `json:"conditions,omitempty"`
+}
+
+// ComponentStatusesList describes a list of component statuses.
+// Deprecated: replaced by ComponentList
+type ComponentStatusesList struct {
+	TypeMeta `json:",inline"`
+	ListMeta `json:"metadata,omitempty"`
+
+	Items []ComponentStatuses `json:"items"`
+}
+```
+
 ### Kubectl (CLI)
 
 Add a `kubectl get components` command to list the components and their last known conditions.
