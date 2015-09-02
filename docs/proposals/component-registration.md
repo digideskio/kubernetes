@@ -40,6 +40,7 @@ Documentation for other releases can be found at
 - [Proposal: Component Registration](#proposal-component-registration)
   - [Table of Contents](#table-of-contents)
   - [Abstract](#abstract)
+  - [Terminology](#terminology)
   - [Use Cases](#use-cases)
     - [Deployment](#deployment)
     - [Debugging](#debugging)
@@ -63,12 +64,24 @@ Documentation for other releases can be found at
 
 Kubernetes was designed to be extensible from the start, but one factor currently limits that capability: the hardcoding of what defines a Kubernetes cluster. To reach enterprise-class capabilities (high availability, notifications, self-healing, reporting, and maintainability) Kubernetes first needs to support dynamic component registration and readiness probes.
 
+## Terminology
+
+To clarify, a "component" in this context is a core part of the Kubernetes cluster, required or optional, that knows about Kubernetes and exposes a method for probing the liveness and readiness of each instance.
+
+The set of available/deployed/registered component types and/or instances may change over time.
+
+Currently there are three types of components in a vanilla Kubernetes deployment, each with a single instance: apiserver, controller-manager, and scheduler.
+
+Etcd should not be considered a component, because it is a dependency of the apiserver, does not know about Kubernetes, and thus cannot register itself or be expected to have both liveness and readiness probe endpoints. However, the current `/componentstatuses` endpoint includes etcd, and must continue to do so for reverse compatibility.
+
 
 ## Use Cases
 
 This proposal primarily covers features that can be achieved internally by Kubernetes itself, but it's clear that there are also some desirable features that must be provided by external deployment, management, or monitoring systems. These external systems, however, require some features within Kubernetes to enable them. So while not all of these use cases can be solved by Kubernetes alone, we do want to make them possible.
 
 ### Deployment
+
+As a k8s operator, I want a to be able to add/remove new components (instances or types) to a new or running cluster (ideally without manually registering it with the apiserver).
 
 As a k8s operator, I want a kubectl command that allows me to validate that the cluster has been deployed and is fully functional.
 
@@ -102,7 +115,7 @@ As an k8s operator, I want the cluster to self-heal when individual components c
 
 As a local process monitoring tool (e.g. monit), I want to be able to determine the condition of the component process I am monitoring to determine if it needs to be restarted.
 
-As a remote container/vm monitoring tool (e.g. bosh monitor), I want to be able to determine the heath of the component container/vm I am monitoring.
+As a remote container/vm monitoring tool (e.g. bosh monitor), I want to be able to determine the health of the component container/vm I am monitoring.
 
 Note: Self-healing requires knowing how to deploy the cluster components, which is different for each cloud platform and changes based on component configuration.
 
@@ -155,7 +168,7 @@ const (
 
 // ComponentCondition describes one aspect of the state of a component
 type ComponentCondition struct {
-	// Type of condition: Pending, Running, or Terminated
+	// Type of condition: Alive or Ready
 	Type ComponentConditionType `json:"type"`
 	// Status of the condition: True, False, or Unknown
 	Status ConditionStatus `json:"status"`
@@ -352,7 +365,9 @@ kube-apiserver-gtlzk            kube-apiserver            Alive,Ready
 
 It's possible the above proposal could also be used to register AddOns that have been deployed with k8s, but then it becomes desirable to be able to use the pods API to proxy liveness/readiness probes, which increases complexity.
 
-There was desire expressed to delegate to the service and/or endpoints APIs to store component location, but because service endpoints are only usable within a cluster, it's not guaranteed that the components (namely the component-controller) will be able to access them. The probes also still need to have a path to the liveness/readiness endpoints, which may not be the root endpoint exposed by the endpoints/service API.
+It was also suggested that this proposal overlaps somewhat with the Nodes API, and that nodes could also be registered as components.
+
+There was desire expressed to delegate to or integration with the service and/or endpoints APIs to store component location, but because service endpoints are only usable within a cluster, it's not guaranteed that the components (namely the component-controller) will be able to access them. The probes also still need to have a path to the liveness/readiness endpoints, which may not be the root endpoint exposed by the endpoints/service API.
 
 Because this proposal includes API changes, it's likely to be put into the experimental API group.
 
