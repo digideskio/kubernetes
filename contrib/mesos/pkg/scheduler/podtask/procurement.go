@@ -17,10 +17,13 @@ limitations under the License.
 package podtask
 
 import (
+	"encoding/json"
+	"fmt"
 	"strings"
 
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
+	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 )
 
@@ -74,6 +77,21 @@ func ValidateProcurement(t *T, offer *mesos.Offer) error {
 	return nil
 }
 
+func setCommandArgument(ei *mesos.ExecutorInfo, flag, value string, create bool) {
+	argv := ei.Command.Arguments
+	overwrite := false
+	for i, arg := range argv {
+		if strings.HasPrefix(arg, flag+"=") {
+			overwrite = true
+			argv[i] = flag + "=" + value
+			break
+		}
+	}
+	if !overwrite && create {
+		ei.Command.Arguments = append(argv, flag+"="+value)
+	}
+}
+
 // NodeProcurement updates t.Spec in preparation for the task to be launched on the
 // slave associated with the offer.
 func NodeProcurement(t *T, offer *mesos.Offer) error {
@@ -82,22 +100,17 @@ func NodeProcurement(t *T, offer *mesos.Offer) error {
 
 	// hostname needs of the executor needs to match that of the offer, otherwise
 	// the kubelet node status checker/updater is very unhappy
-	const HOSTNAME_OVERRIDE_FLAG = "--hostname-override="
-	hostname := offer.GetHostname() // required field, non-empty
-	hostnameOverride := HOSTNAME_OVERRIDE_FLAG + hostname
+	setCommandArgument(t.executor, "--hostname-override", offer.GetHostname(), true)
 
-	argv := t.executor.Command.Arguments
-	overwrite := false
-	for i, arg := range argv {
-		if strings.HasPrefix(arg, HOSTNAME_OVERRIDE_FLAG) {
-			overwrite = true
-			argv[i] = hostnameOverride
-			break
-		}
+	// let the minion create a node object with proper labels before launching the kubelet
+	labels := node.SlaveAttributesToLabels(offer.GetAttributes())
+	value, err := json.Marshal(labels)
+	if err != nil {
+		return fmt.Errorf("cannot convert node labels into a minion command line flag: %v", err)
 	}
-	if !overwrite {
-		t.executor.Command.Arguments = append(argv, hostnameOverride)
-	}
+	setCommandArgument(t.executor, "--node-labels", string(value), false)
+	setCommandArgument(t.executor, "--node-hostname", offer.GetHostname(), false)
+
 	return nil
 }
 

@@ -33,6 +33,7 @@ import (
 	mutil "github.com/mesos/mesos-go/mesosutil"
 	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
+	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/pkg/api"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -224,6 +225,13 @@ func (k *KubernetesExecutor) Registered(driver bindings.ExecutorDriver,
 		k.staticPodsConfig = executorInfo.Data
 	}
 
+	if slaveInfo != nil {
+		_, err := node.CreateOrUpdate(k.client, slaveInfo.GetHostname(), node.SlaveAttributesToLabels(slaveInfo.Attributes))
+		if err != nil {
+			log.Errorf("cannot update node labels: %v", err)
+		}
+	}
+
 	k.initialRegistration.Do(k.onInitialRegistration)
 }
 
@@ -236,6 +244,13 @@ func (k *KubernetesExecutor) Reregistered(driver bindings.ExecutorDriver, slaveI
 	log.Infof("Reregistered with slave %v\n", slaveInfo)
 	if !(&k.state).transition(disconnectedState, connectedState) {
 		log.Errorf("failed to reregister/transition to a connected state")
+	}
+
+	if slaveInfo != nil {
+		_, err := node.CreateOrUpdate(k.client, slaveInfo.GetHostname(), node.SlaveAttributesToLabels(slaveInfo.Attributes))
+		if err != nil {
+			log.Errorf("cannot update node labels: %v", err)
+		}
 	}
 
 	k.initialRegistration.Do(k.onInitialRegistration)

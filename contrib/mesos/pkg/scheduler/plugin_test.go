@@ -399,7 +399,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	testScheduler := New(Config{
 		Executor:  executor,
 		Client:    client.NewOrDie(&client.Config{Host: testApiServer.server.URL, Version: testapi.Default.Version()}),
-		Scheduler: NewFCFSPodScheduler(as),
+		Scheduler: NewFCFSPodScheduler(as, cache.NewStore(cache.MetaNamespaceKeyFunc)),
 		Schedcfg:  *schedcfg.CreateDefaultConfig(),
 	})
 

@@ -22,6 +22,8 @@ import (
 
 	"k8s.io/kubernetes/contrib/mesos/pkg/offers"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/client/cache"
 )
 
 type allocationStrategy struct {
@@ -52,10 +54,11 @@ func NewAllocationStrategy(fitPredicate podtask.FitPredicate, procurement podtas
 
 type fcfsPodScheduler struct {
 	AllocationStrategy
+	nodeStore cache.Store
 }
 
-func NewFCFSPodScheduler(as AllocationStrategy) PodScheduler {
-	return &fcfsPodScheduler{as}
+func NewFCFSPodScheduler(as AllocationStrategy, nodeStore cache.Store) PodScheduler {
+	return &fcfsPodScheduler{as, nodeStore}
 }
 
 // A first-come-first-serve scheduler: acquires the first offer that can support the task
@@ -67,7 +70,22 @@ func (fps *fcfsPodScheduler) SchedulePod(r offers.Registry, unused SlaveIndex, t
 		if offer == nil {
 			return false, fmt.Errorf("nil offer while scheduling task %v", task.ID)
 		}
-		if fps.FitPredicate()(task, offer) {
+
+		// try to get a node, might fail if it's the first pod on this slave
+		nodeName := offer.GetHostname()
+		obj, _, err := fps.nodeStore.GetByKey(nodeName)
+		if err != nil {
+			return false, fmt.Errorf("error getting node %v", nodeName)
+		}
+		var n *api.Node
+		if obj == nil {
+			log.V(4).Infof("unknown node %q in offer", nodeName)
+		} else {
+			n = obj.(*api.Node)
+			log.V(4).Infof("known node %q in offer with labels: %v", nodeName, n.Labels)
+		}
+
+		if fps.FitPredicate()(task, offer, n) {
 			if p.Acquire() {
 				acceptedOffer = p
 				log.V(3).Infof("Pod %s accepted offer %v", podName, offer.Id.GetValue())

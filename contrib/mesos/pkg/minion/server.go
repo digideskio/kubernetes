@@ -17,6 +17,7 @@ limitations under the License.
 package minion
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -26,17 +27,17 @@ import (
 	"strings"
 	"syscall"
 
-	exservice "k8s.io/kubernetes/contrib/mesos/pkg/executor/service"
-	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
-	"k8s.io/kubernetes/contrib/mesos/pkg/minion/config"
-	"k8s.io/kubernetes/contrib/mesos/pkg/minion/tasks"
-	"k8s.io/kubernetes/pkg/api/resource"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
-
 	log "github.com/golang/glog"
 	"github.com/kardianos/osext"
 	"github.com/spf13/pflag"
 	"gopkg.in/natefinch/lumberjack.v2"
+	exservice "k8s.io/kubernetes/contrib/mesos/pkg/executor/service"
+	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
+	"k8s.io/kubernetes/contrib/mesos/pkg/minion/config"
+	"k8s.io/kubernetes/contrib/mesos/pkg/minion/tasks"
+	"k8s.io/kubernetes/contrib/mesos/pkg/node"
+	"k8s.io/kubernetes/pkg/api/resource"
+	client "k8s.io/kubernetes/pkg/client/unversioned"
 )
 
 const (
@@ -60,6 +61,8 @@ type MinionServer struct {
 	cgroupRoot          string // the cgroupRoot that we pass to the kubelet-executor, depends on containPodResources
 	mesosCgroup         string // discovered mesos cgroup root, e.g. /mesos/{container-id}
 	containPodResources bool
+	nodeLabelString     string // a json dictionary with node labels to be applied to the node object on the apiserver
+	nodeHostName        string // the hostname used to create the node object on the apiserver
 
 	logMaxSize      resource.Quantity
 	logMaxBackups   int
@@ -73,6 +76,11 @@ type MinionServer struct {
 
 // NewMinionServer creates the MinionServer struct with default values to be used by hyperkube
 func NewMinionServer() *MinionServer {
+	hostName, err := os.Hostname()
+	if err != nil || hostName == "" {
+		log.Fatalf("failed to determine the hostname: %v", err)
+	}
+
 	s := &MinionServer{
 		KubeletExecutorServer: exservice.NewKubeletExecutorServer(),
 		privateMountNS:        false, // disabled until Docker supports customization of the parent mount namespace
@@ -82,6 +90,7 @@ func NewMinionServer() *MinionServer {
 		logMaxBackups:         config.DefaultLogMaxBackups,
 		logMaxAgeInDays:       config.DefaultLogMaxAgeInDays,
 		runProxy:              true,
+		nodeHostName:          hostName,
 	}
 
 	// cache this for later use
@@ -243,6 +252,22 @@ func (ms *MinionServer) Run(hks hyperkube.Interface, _ []string) error {
 		log.Fatalf("No API client: %v", err)
 	}
 	ms.clientConfig = clientConfig
+	c := client.NewOrDie(clientConfig)
+
+	// create or update node object on apiserver. This must be done synchronously
+	// because the kubelet will refuse launching pods if the labels do not match.
+	labels := map[string]string{}
+	if ms.nodeLabelString != "" {
+		err = json.Unmarshal([]byte(ms.nodeLabelString), &labels)
+		if err != nil {
+			log.Fatalf("Invalid node-labels string: %v", err)
+		}
+	}
+	log.Infof("Creating or updating node %s with labels %v", ms.nodeHostName, labels)
+	_, err = node.CreateOrUpdate(c, ms.nodeHostName, labels)
+	if err != nil {
+		log.Fatalf("Cannot create or update node %s: %v", ms.nodeHostName, err)
+	}
 
 	// derive the executor cgroup and use it as:
 	// - pod container cgroup root (e.g. docker cgroup-parent, optionally; see comments below)
@@ -326,6 +351,8 @@ func (ms *MinionServer) AddMinionFlags(fs *pflag.FlagSet) {
 	fs.BoolVar(&ms.privateMountNS, "private-mountns", ms.privateMountNS, "Enter a private mount NS before spawning procs (linux only). Experimental, not yet compatible with k8s volumes.")
 	fs.StringVar(&ms.pathOverride, "path-override", ms.pathOverride, "Override the PATH in the environment of the sub-processes.")
 	fs.BoolVar(&ms.containPodResources, "contain-pod-resources", ms.containPodResources, "Allocate pod CPU and memory resources from offers and reparent pod containers into mesos cgroups; disable if you're having strange mesos/docker/systemd interactions.")
+	fs.StringVar(&ms.nodeLabelString, "node-labels", ms.nodeLabelString, "A json dictionary holding node labels to be applied to the node")
+	fs.StringVar(&ms.nodeHostName, "node-hostname", ms.nodeHostName, "The hostname of the node")
 
 	// log file flags
 	fs.Var(resource.NewQuantityFlagValue(&ms.logMaxSize), "max-log-size", "Maximum log file size for the executor and proxy before rotation")
