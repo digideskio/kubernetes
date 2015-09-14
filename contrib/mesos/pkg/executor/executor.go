@@ -31,9 +31,9 @@ import (
 	bindings "github.com/mesos/mesos-go/executor"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	mutil "github.com/mesos/mesos-go/mesosutil"
-	"k8s.io/kubernetes/contrib/mesos/pkg/archive"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
+	"k8s.io/kubernetes/contrib/mesos/pkg/staticpods"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -279,7 +279,7 @@ func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func()) {
 	}
 
 	log.V(2).Infof("extracting static pods config to %s", k.staticPodsConfigPath)
-	err := archive.UnzipDir(k.staticPodsConfig, k.staticPodsConfigPath)
+	err := staticpods.GUnzipToDir(k.staticPodsConfig, k.staticPodsConfigPath)
 	if err != nil {
 		log.Errorf("Failed to extract static pod config: %v", err)
 		return
