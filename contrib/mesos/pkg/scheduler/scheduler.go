@@ -65,6 +65,7 @@ type PluginInterface interface {
 // 1: A mesos scheduler.
 // 2: A kubernetes scheduler plugin.
 // 3: A kubernetes pod.Registry.
+// 4: A healthz.HealthCheck
 type KubernetesScheduler struct {
 	// We use a lock here to avoid races
 	// between invoking the mesos callback
@@ -168,6 +169,14 @@ func New(config Config) *KubernetesScheduler {
 		}),
 	}
 	return k
+}
+
+func (*KubernetesScheduler) Name() string {
+	return "scheduler"
+}
+
+func (*KubernetesScheduler) Check(_ *http.Request) error {
+	return nil
 }
 
 func (k *KubernetesScheduler) Init(electedMaster proc.Process, pl PluginInterface, mux *http.ServeMux) error {

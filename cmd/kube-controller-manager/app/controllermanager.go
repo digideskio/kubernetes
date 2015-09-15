@@ -212,23 +212,6 @@ func (s *CMServer) Run(_ []string) error {
 		glog.Fatalf("Invalid API configuration: %v", err)
 	}
 
-	go func() {
-		mux := http.NewServeMux()
-		healthz.InstallHandler(mux)
-		if s.EnableProfiling {
-			mux.HandleFunc("/debug/pprof/", pprof.Index)
-			mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
-			mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
-		}
-		mux.Handle("/metrics", prometheus.Handler())
-
-		server := &http.Server{
-			Addr:    net.JoinHostPort(s.Address.String(), strconv.Itoa(s.Port)),
-			Handler: mux,
-		}
-		glog.Fatal(server.ListenAndServe())
-	}()
-
 	endpoints := endpointcontroller.NewEndpointController(kubeClient)
 	go endpoints.Run(s.ConcurrentEndpointSyncs, util.NeverStop)
 
@@ -324,5 +307,40 @@ func (s *CMServer) Run(_ []string) error {
 		serviceaccount.DefaultServiceAccountsControllerOptions(),
 	).Run()
 
+	go func() {
+		mux := http.NewServeMux()
+		healthz.InstallHandler(
+			mux,
+			checkers(controllerManager, nodeController, resourceQuotaController, namespaceController)...,
+		)
+		if s.EnableProfiling {
+			mux.HandleFunc("/debug/pprof/", pprof.Index)
+			mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+			mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+		}
+		mux.Handle("/metrics", prometheus.Handler())
+
+		server := &http.Server{
+			Addr:    net.JoinHostPort(s.Address.String(), strconv.Itoa(s.Port)),
+			Handler: mux,
+		}
+		glog.Fatal(server.ListenAndServe())
+	}()
+
 	select {}
+}
+
+// checkers returns controllers implementing the HealthzChecker interface
+func checkers(controllers ...interface{}) []healthz.HealthzChecker {
+	cs := make([]healthz.HealthzChecker, 0, len(controllers))
+
+	for _, c := range controllers {
+		if checker, ok := c.(healthz.HealthzChecker); ok {
+			cs = append(cs, checker)
+		}
+	}
+
+	glog.V(2).Infof("checkers %+v", cs)
+
+	return cs
 }

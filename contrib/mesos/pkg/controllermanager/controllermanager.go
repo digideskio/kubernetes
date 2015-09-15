@@ -94,20 +94,6 @@ func (s *CMServer) Run(_ []string) error {
 		glog.Fatalf("Invalid API configuration: %v", err)
 	}
 
-	go func() {
-		mux := http.NewServeMux()
-		healthz.InstallHandler(mux)
-		if s.EnableProfiling {
-			profile.InstallHandler(mux)
-		}
-		mux.Handle("/metrics", prometheus.Handler())
-		server := &http.Server{
-			Addr:    net.JoinHostPort(s.Address.String(), strconv.Itoa(s.Port)),
-			Handler: mux,
-		}
-		glog.Fatal(server.ListenAndServe())
-	}()
-
 	endpoints := s.createEndpointController(kubeClient)
 	go endpoints.Run(s.ConcurrentEndpointSyncs, util.NeverStop)
 
@@ -193,7 +179,39 @@ func (s *CMServer) Run(_ []string) error {
 		serviceaccount.DefaultServiceAccountsControllerOptions(),
 	).Run()
 
+	go func() {
+		mux := http.NewServeMux()
+		healthz.InstallHandler(
+			mux,
+			checkers(
+				newApiserverHealthzChecker(kubeClient),
+				controllerManager,
+				nodeController,
+				resourceQuotaController,
+				namespaceController,
+			)...,
+		)
+		if s.EnableProfiling {
+			profile.InstallHandler(mux)
+		}
+		mux.Handle("/metrics", prometheus.Handler())
+		server := &http.Server{
+			Addr:    net.JoinHostPort(s.Address.String(), strconv.Itoa(s.Port)),
+			Handler: mux,
+		}
+		glog.Fatal(server.ListenAndServe())
+	}()
+
 	select {}
+}
+
+func newApiserverHealthzChecker(client *client.Client) healthz.HealthzChecker {
+	return healthz.NamedCheck(
+		"apiserver",
+		func(_ *http.Request) error {
+			return client.Get().AbsPath("api").Do().Error()
+		},
+	)
 }
 
 func (s *CMServer) createEndpointController(client *client.Client) kmendpoint.EndpointController {
@@ -204,4 +222,19 @@ func (s *CMServer) createEndpointController(client *client.Client) kmendpoint.En
 	glog.V(2).Infof("Creating podIP:containerPort endpoint controller")
 	stockEndpointController := kendpoint.NewEndpointController(client)
 	return stockEndpointController
+}
+
+// checkers returns controllers implementing the HealthzChecker interface
+func checkers(controllers ...interface{}) []healthz.HealthzChecker {
+	cs := make([]healthz.HealthzChecker, 0, len(controllers))
+
+	for _, c := range controllers {
+		if checker, ok := c.(healthz.HealthzChecker); ok {
+			cs = append(cs, checker)
+		}
+	}
+
+	glog.V(2).Infof("checkers %+v", cs)
+
+	return cs
 }
