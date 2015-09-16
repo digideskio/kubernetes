@@ -39,8 +39,11 @@ Documentation for other releases can be found at
 
 - [Proposal: Component Registration](#proposal-component-registration)
   - [Table of Contents](#table-of-contents)
-  - [Abstract](#abstract)
   - [Terminology](#terminology)
+  - [Abstract](#abstract)
+  - [Problems](#problems)
+    - [ComponentStatuses](#componentstatuses)
+    - [Endpoints](#endpoints)
   - [Use Cases](#use-cases)
     - [Deployment](#deployment)
     - [Debugging](#debugging)
@@ -49,35 +52,98 @@ Documentation for other releases can be found at
     - [Self-Healing](#self-healing)
   - [Design](#design)
     - [API Changes](#api-changes)
-      - [Component API](#component-api)
-      - [ComponentStatuses API](#componentstatuses-api)
+      - [API Types](#api-types)
     - [Kubectl (CLI)](#kubectl-cli)
     - [Storage](#storage)
     - [Status Updates](#status-updates)
-  - [History](#history)
   - [Example](#example)
+  - [Alternate Naming](#alternate-naming)
   - [Next Steps](#next-steps)
 
 <!-- END MUNGE: GENERATED_TOC -->
 
-## Abstract
-
-Kubernetes was designed to be extensible from the start, but one factor currently limits that capability: the hardcoding of what defines a Kubernetes cluster. To reach enterprise-class capabilities (high availability, notifications, self-healing, reporting, and maintainability) Kubernetes first needs to support dynamic component registration and readiness probes.
-
 ## Terminology
 
-To clarify, a "component" in this context is a core part of the Kubernetes cluster, required or optional, that knows about Kubernetes and exposes a method for probing the liveness and readiness of each instance.
+A Kubernetes Cluster **Component**...
 
-The set of available/deployed/registered component types and/or instances may change over time.
+- Is a required or optional part of the Kubernetes cluster
+- Knows about Kubernetes (speaks the API)
+- Must be registered with Kubernetes to join the cluster
+- May consist of one or more instances
+- May be deployed on different (network accessible) machines
+- Must exposes a method for remotely probing the liveness and readiness of each instance (e.g. tcp/http/https).
+- May be added to or removed from a running cluster (if optional)
+- May be upgraded over time
 
-Currently there are three types of components in a vanilla Kubernetes deployment, each with a single instance: apiserver, controller-manager, and scheduler.
+The **Primary Components** currently consist of the apiserver, controller-manager, and scheduler.
 
-Etcd should not be considered a component, because it is a dependency of the apiserver, does not know about Kubernetes, and thus cannot register itself or be expected to have both liveness and readiness probe endpoints. However, the current `/componentstatuses` endpoint includes etcd, and must continue to do so for reverse compatibility.
+The"**Hyperkube** is a single binary that can be run as each of the three primary component binaries. Hyperkube may also refer to the set (or pod) of primary component containers or the (virtual) machine that those containers run on.
+
+**Master** has been sometimes used in reference to both the APIServer component and the (virtual) machine which hosts the three primary components. I'm going to avoid this term, because it is ambiguous.
+
+**Etcd** is a consistent key value storage cluster. It should not be considered a component, because it is a dependency of the apiserver, does not know about Kubernetes, and thus cannot register itself with Kubernetes but must be configured. In general, the apiserver attempts to hide/abstract Etcd from the rest of the components with its API.
+
+**ComponentStatuses** is a top-level Kubernetes API resource that exposes a `/componentstatuses` endpoint that shows component and Etcd status. It's unquestionably useful and used, but questionably named and implemented. However, it must continue to function (until v2) for reverse compatibility. See [Problems](#problems) for more details. `kubectl get componentstatuses` can be used from the CLI as a wrapper for the API..
+
+**Liveness** is a condition of a service instance that indicates it is running. When a local process is NotAlive it needs to be restarted. When a remote service is NotAlive it may been to be restarted, or the networking may need to be fixed.
+
+**Readiness** is a condition of a service instance that indicates it is Alive, able to handle new requests, and that its dependencies are also Ready. Ideally transitivity of readiness requires that only immediate dependencies be confirmed to be Ready. Readiness is usually expected to be easily assessed, slightly more expensive than liveness assessment, but still cheap enough to perform frequently and continuously. Readiness is not expected to provide robust metrics data, which may be more expensive to gather.
+
+**Canary Conditions** are conditions which indicate problems. Liveness and Readiness are canary conditions because when failing, they indicate problems, but do not guarantee health when not failing. Because of this distinction, and to avoid ambiguity, the term "health" should be avoided in this context.
+
+**Endpoints** is a set of address:port pairs (with optional port name) that describe the providing instances of a Service. Currently only Ready addresses are included, but there is a PR to add NotReady addresses: #13778. Internal Endpoints are created and managed by the Endpoints Controller.
+
+An **Internal Service** is a Service defined by Pod Selectors. Internal Endpoints are created from Internal Services.
+
+An **External Service** is a Service without Selectors. External Endpoints must be created manually (or at least are not created by vanilla Kubernetes components).
+
+
+## Abstract
+
+The goal of this proposal is to move Kubernetes a little closer to each of the following goals:
+
+- **High Availability**
+  - Allow multiple instances of each component
+- **Extensibility**
+  - Allow optional and third party components to be added to the cluster
+- **Deployment Flexibility**
+  - Allow components to be deployed on different machines and in different availability zones
+- **Operability**
+  - Expose a filterable list of component conditions on the apiserver to simplify collection of component conditions
+  - Expose a filterable list of components on the apiserver to see which components are installed/deployed
+- **Security**
+  - Cache component conditions in Etcd (via apiserver) to reduce denial of service risk caused by network fan-out (requires continuous liveness/readiness probing)
+- **Consistency/Simplicity/Reuse**
+  - Make external services more like internal services (defined by selectors of another resource)
+  - Simplify the usage of the Endpoints API to be exclusively dynamically generated (read-only)
+  - Group the Specification (Spec) and Status of external service provider instances into a single model (Endpoints is messy combination of both Spec and Status for both internal and external addresses)
+  - Register components as external services (namespaced and labeled)
+  - Implement liveness/readiness probing in a way that can be used by all external services, not just components
+
+
+## Problems
+
+### ComponentStatuses
+
+1. The set of components is hardcoded
+2. The component addresses and ports are hardcoded (localhost, default port)
+3. The `/healthz` probe path is hardcoded
+4. Etcd is included as a component
+5. Each user request performs network amplification by fanning out requests to all components (DOS risk)
+6. Probing is done in serial (slow)
+7. Inconsistent with other registry/storage APIs and their implementations
+
+
+### Endpoints
+
+1. Endpoints doesn't distinguish between Spec and Status. In most other resources the Spec is the desired state and the Status is current (or last known) state. For more details, see the [API Conventions](../devel/api-conventions.md#spec-and-status).
+2. Endpoints is both a dynamically populated resource AND a manually populated resource. This confusion of ownership makes it hard to use, hard to describe, overly complicated, and inconsistent with other API resources.
 
 
 ## Use Cases
 
-This proposal primarily covers features that can be achieved internally by Kubernetes itself, but it's clear that there are also some desirable features that must be provided by external deployment, management, or monitoring systems. These external systems, however, require some features within Kubernetes to enable them. So while not all of these use cases can be solved by Kubernetes alone, we do want to make them possible.
+This proposal primarily covers features that can be achieved internally by Kubernetes itself, but many of these features and changes are motivated by external use cases, which need enablement. Not all of these use cases will be completely enabled by this proposal.
+
 
 ### Deployment
 
@@ -122,256 +188,106 @@ Note: Self-healing requires knowing how to deploy the cluster components, which 
 
 ## Design
 
+Unfortunately, ComponentStatuses is almost not worth the effort to fix. Instead it can be deprecated and replaced by a combination of Service and Endpoints changes. This allows the components and their addresses & ports to be specified more flexibly.
+
+Since it's seemingly impossible to fix Endpoints Problem \#1 without breaking reverse compatibility, this proposal punts on \#1 (until v2 allows reverse-incompatibility) and focuses on fixing \#2 for now. #13778 handles increasing the scope of Endpoints to cover both Ready and NotReady addresses, which is better than nothing, but not as flexible as having an array of conditions, like other -Status API resources.
+
+To fix Endpoints Problem \#2, this proposal moves the specification (and status) of external service provider addresses to its own top-level namespaced API resource (provisionally called **ExternalServiceTarget**). Endpoints Controller will then continue to manage the creation/updates/deletion of Endpoints for internal services based on a selection of Pod instances, but will also do the same for external services based on a selection of ExternalServiceTargets. Endpoints then becomes a (conceptually) read-only API for the user.
+
+
 ### API Changes
 
-Add a single component status endpoint (`/components/status`) that lists the last known condition of all the k8s components.
+1. Add new namespaced top level resource: ExternalServiceTarget
+  - Listable, like most other top-level resources
+  - Have both Spec and Status (filterable on both/either)
+  - Spec would have address (ip or host) and ports (optionally named)
+  - Spec would have (optional) LivenessProbe and ReadinessProbe for determining the condition
+  - Status would have an array of [Conditions](../devel/api-conventions.md#typical-status-properties)
+  - Similar to Endpoints, but more static. Defines the set of expected service instances, rather than the set of Ready service instances.
+  - Have to be manually added for non-component external Service instances (e.g. Oracle DB) that do not know about k8s (rather than adding Endpoints)
+  - Can be named with a name generator (similar to pods created by replication controllers) when instances of the same type don't already have unique IDs (generated name is returned in the create response)
+2. Add a new field ServiceSpec.TargetSelector that selects a subset of ExternalServiceTargets
+  - Analogous to the ServiceSpec.Selector-Pod relationship
+3. Add a new ExternalServiceTarget Controller that handles probing ExternalServiceTargets
+  - Probe results update ExternalServiceTarget.Status.Conditions
+4. Modify Endpoints Controller to manage ExternalServiceTarget Endpoints
+  - Readiness from ExternalServiceTarget.Status.Conditions analogous to PodStatus.Conditions
+5. Modify components to self-register ExternalServiceTargets (one per component instance) instead of an Endpoint
+  - Group ExternalServiceTargets (component instances) with labels (e.g. "type=apiserver", "component=core")
+6. Register component Services (with ServiceSpec.TargetSelector) as part of cluster deployment
+  - Services of new components can also be added at runtime, before any instances exist. Each instance would self-register a ExternalServiceTargets.
+7. Modify Service to be support both internal and external targets in the same Service (Pods + ExternalServiceTargets)
+8. Deprecate `/componentsstatuses` in favor of requesting a filtered list of ExternalServiceTargets
+  - ExternalServiceTargets are external-only, but have generic conditions (liveness and readiness)
+  - Endpoints are external + internal, but only have readiness (for now)
 
-Add a single component endpoint (`/components`) that lists the spec/status of all the k8s components.
 
-Add individual component endpoints (`/component/status/<name>`) that show the status of each k8s component.
-
-Add a LivenessProbe to the component spec that describes how to probe whether the component is running (including during bootstrapping/startup).
-
-Add a ReadinessProbe to the component spec that describes how to probe whether the component is fully functional and ready to be used.
-
-Group components by type, to allow multiple instances of each type, to enable HA cluster deployments.
-
-Use the existing name generator with component type as the prefix to ensure component names are unique. Return the generated name in the create response.
-
-#### Component API
+#### API Types
 
 The following is a draft of how the Component model might look.
 
-```
-// ComponentType is the name of a group of one or more component instances
-type ComponentType string
-
-// ComponentSpec defines a component and how to verify its status
-type ComponentSpec struct {
-	// Type of the component
-	Type ComponentType `json:"type"`
-	// Periodic probe of component liveness.
-	LivenessProbe *Probe `json:"livenessProbe,omitempty"`
-	// Periodic probe of component readiness.
-	ReadinessProbe *Probe `json:"readinessProbe,omitempty"`
-}
-
-// ComponentConditionType describes a type of component condition
-type ComponentConditionType string
-
-const (
-	// ComponentAlive indicates that a component is running
-	ComponentAlive ComponentConditionType = "Alive"
-	// ComponentReady indicates that a component is ready for use
-	ComponentReady ComponentConditionType = "Ready"
-)
-
-// ComponentCondition describes one aspect of the state of a component
-type ComponentCondition struct {
-	// Type of condition: Alive or Ready
-	Type ComponentConditionType `json:"type"`
-	// Status of the condition: True, False, or Unknown
-	Status ConditionStatus `json:"status"`
-	// Reason for the transition to the current status (machine-readable)
-	Reason string `json:"reason,omitempty"`
-	// Message that describes the current status (human-readable)
-	Message string `json:"message,omitempty"`
-}
-
-// ComponentStatus describes the status of a component
-type ComponentStatus struct {
-	// Conditions of the component
-	Conditions []ComponentCondition `json:"conditions,omitempty"`
-	// LastUpdateTime of the component status, regardless of previous status.
-	LastUpdateTime util.Time `json:"lastUpdateTime,omitempty"`
-	// LastTransitionTime of the component status, from a different phase and/or condition
-	LastTransitionTime util.Time `json:"lastTransitionTime,omitempty"`
-}
-
-// Component describes an instance of a specific micro-service, along with its definition and last known status
-type Component struct {
-	TypeMeta `json:",inline"`
-	// Standard object's metadata.
-	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#metadata
-	ObjectMeta `json:"metadata,omitempty"`
-	// Spec defines the behavior of a component and how to verify its status.
-	// http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status
-	Spec ComponentSpec `json:"spec"`
-	// Status defines the component's last known state.
-	// http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#spec-and-status
-	Status ComponentStatus `json:"status"`
-}
-
-// ComponentList describes a list of components
-type ComponentList struct {
-	TypeMeta `json:",inline"`
-	// Standard list metadata.
-	// More info: http://releases.k8s.io/HEAD/docs/devel/api-conventions.md#types-kinds
-	ListMeta `json:"metadata,omitempty"`
-	// Items is a list of component objects.
-	Items []Component `json:"items"`
-}
-```
-
-#### ComponentStatuses API
-
-In order the make room for the new Component models, the existing ComponentStatus models need to be renamed. This should be reverse compatible for the REST API user, but will break compilation of any third part components using the model objects directly.
-
-The renamed ComponentStatuses API should then be deprecated. Minimally, deprecation could be done via the model comments, which are used to generate the API docs.
-
-```
-// Type and constants for component health validation.
-// Deprecated: replaced by ComponentConditionType
-type ComponentStatusesConditionType string
-
-// These are the valid conditions for the component condition type.
-const (
-	ComponentStatusesHealthy ComponentStatusesConditionType = "Healthy"
-)
-
-// ComponentStatusesCondition describes one aspect of the state of a component.
-// Deprecated: replaced by ComponentCondition
-type ComponentStatusesCondition struct {
-	Type    ComponentStatusesConditionType `json:"type"`
-	Status  ConditionStatus                `json:"status"`
-	Message string                         `json:"message,omitempty"`
-	Error   string                         `json:"error,omitempty"`
-}
-
-// ComponentStatuses (and ComponentStatusesList) holds the cluster validation info.
-// Deprecated: replaced by ComponentStatus
-type ComponentStatuses struct {
-	TypeMeta   `json:",inline"`
-	ObjectMeta `json:"metadata,omitempty"`
-
-	Conditions []ComponentStatusesCondition `json:"conditions,omitempty"`
-}
-
-// ComponentStatusesList describes a list of component statuses.
-// Deprecated: replaced by ComponentList
-type ComponentStatusesList struct {
-	TypeMeta `json:",inline"`
-	ListMeta `json:"metadata,omitempty"`
-
-	Items []ComponentStatuses `json:"items"`
-}
-```
+TODO
 
 ### Kubectl (CLI)
 
-Add a `kubectl get components` command to list the components and their last known conditions.
+Ready Service Endpoints can be queried with the existing `kubectl get endpoints <service-name>`.
+
+Add a `kubectl get externalservicetargets` (`kubectl get est` for short) command to list the external service provider instances, their address/port/name and their last known conditions. Components can be retrived with a component specific label, like `type=component` or `component=apiserver`.
+
 
 ### Storage
 
-Store component spec/status in etcd, with an apiserver storage wrapper.
+Store ExternalServiceTargets spec/status in etcd, with an apiserver storage wrapper.
+
 
 ### Status Updates
 
-Add a component-controller that regularly probes registered components and updates their stored last known status.
+Add an external-service-target-controller that regularly probes registered targets and updates their stored last known status.
 
-Add self-registration to the components that uses the new Components API (Create call) when the component starts.
+Add self-registration to the components that uses the new ExternalServiceTargets API (Create call) when the component starts.
 
-Add self-deregistration to the components that uses the new Components API (Remove call) when the component stops gracefully (e.g. after receiving SIGTERM).
+Add self-deregistration to the components that uses the new ExternalServiceTargets API (Remove call) when the component stops gracefully (e.g. after receiving SIGTERM).
 
-Add self-updating to the components that uses the new Components API (Update call) when the component errors/panics.
+Add self-updating to the components that uses the new ExternalServiceTargets API (Update call) when the component errors/panics.
 
-Use a TCP probe to check liveness, because it indicates a server is listening on the expected host/path, even if its responses are unhealthy.
+Use a TCP probe (of `/healthz` or `/healthz/ping`) to check liveness, because it indicates a server is listening on the expected host/path, even if its responses are unhealthy.
 
-Update individual component `/healthz` endpoints to perform as an indicator of readiness, not just liveness. Readiness should include transitively checking the readiness of external dependencies (e.g. etcd or other databases).
-
-
-## History
-
-The `/componentstatuses` endpoint and associated `kubectl get componentstatuses` CLI command were added to facilitate retrieving the status of the cluster.
-
-Limitations of the current implementation:
-
-- Components are hardcoded
-  - Components assumed to be localhost accessible
-    - Not required/enforced by any other method
-    - Incompatible with HA deployments (deploying components on different machines)
-    - Incompatible with non-host docker networking (deploying components in different containers)
-  - Components assumed to use default ports
-    - Incompatible with custom port configurations
-  - Components assumed to have a root `/healthz` endpoint
-    - Incompatible with components behind reverse proxies with path prefixes
-- Etcd is included as a component
-  - Inconsistent with convention that `/healthz` success implies usability (aka, dependencies are also usable, even if not completely healthy)
-  - Indicates a k8s cluster problem even if only 1 of 3 HA Etcd nodes are down
-- Each http request triggers 5 other requests
-  - Denial of Service risk from traffic amplification
-- Simple probe impl
-  - No caching
-  - Requests made in serial
-  - Inconsistent with other registry/storage APIs and implementations
+Update individual component `/healthz` endpoints with sub-resources to allow them to perform as an indicator of readiness, not just liveness. Readiness should include transitively checking the readiness of immediate dependencies (e.g. etcd or other databases).
 
 
 ## Example
 
-The following terminal commands are an example of how the `kubectl get components` command might work, as implemented by PR #12324.
+The following terminal commands are an example of how the `kubectl get externalservicetargets` command might work.
 
-Notes:
-- This examples use the [mesos/docker cluster](../getting-started-guides/mesos-docker.md).
-- This example does not include self-deregistration on graceful shutdown, because none of the components support graceful shutdown yet.
-- This example uses a 5s probe period and a 5s probe timeout with no retires. So the status resolution is about 5s.
+TODO
 
-```
-$./cluster/kube-up.sh
-...
-Kubernetes master is running at https://172.17.0.41:6443
-KubeDNS is running at https://172.17.0.41:6443/api/v1/proxy/namespaces/kube-system/services/kube-dns
-KubeUI is running at https://172.17.0.41:6443/api/v1/proxy/namespaces/kube-system/services/kube-ui
+## Alternate Naming
 
-$ ./cluster/kubectl.sh get components
-NAME                            TYPE                      STATUS
-k8sm-controller-manager-78fni   k8sm-controller-manager   Alive,Ready
-k8sm-scheduler-jn6p9            k8sm-scheduler            Alive,Ready
-kube-apiserver-gtlzk            kube-apiserver            Alive,Ready
+ExternalServiceTarget is a bit verbose for a top-level API resource name. Here are some other naming options for the same concept.
 
-$ docker-compose -f ./cluster/mesos/docker/docker-compose.yml stop scheduler
-Stopping docker_scheduler_1...
+ExternalTarget
+[External]Endpoint (singular)
+[External]ServiceTarget
+[External]ServiceInstance
+[External]ServiceProvider
+[External]Shell (Pod without peas)
+[External]ServiceIngress
+[External]ServiceUnit
+[External]ServiceMember
 
-$ ./cluster/kubectl.sh get components
-NAME                            TYPE                      STATUS
-k8sm-controller-manager-78fni   k8sm-controller-manager   Alive,Ready
-k8sm-scheduler-jn6p9            k8sm-scheduler            Alive,Ready
-kube-apiserver-gtlzk            kube-apiserver            Alive,Ready
-
-$ ./cluster/kubectl.sh get components
-NAME                            TYPE                      STATUS
-k8sm-controller-manager-78fni   k8sm-controller-manager   Alive,Ready
-k8sm-scheduler-jn6p9            k8sm-scheduler            NotAlive,NotReady
-kube-apiserver-gtlzk            kube-apiserver            Alive,Ready
-
-$ docker-compose -f ./cluster/mesos/docker/docker-compose.yml start scheduler
-Starting docker_scheduler_1...
-
-$ ./cluster/kubectl.sh get components
-NAME                            TYPE                      STATUS
-k8sm-controller-manager-78fni   k8sm-controller-manager   Alive,Ready
-k8sm-scheduler-h3st3            k8sm-scheduler            Alive,NotReady
-k8sm-scheduler-jn6p9            k8sm-scheduler            NotAlive,NotReady
-kube-apiserver-gtlzk            kube-apiserver            Alive,Ready
-
-$ ./cluster/kubectl.sh get components
-NAME                            TYPE                      STATUS
-k8sm-controller-manager-78fni   k8sm-controller-manager   Alive,Ready
-k8sm-scheduler-h3st3            k8sm-scheduler            Alive,Ready
-k8sm-scheduler-jn6p9            k8sm-scheduler            NotAlive,NotReady
-kube-apiserver-gtlzk            kube-apiserver            Alive,Ready
-```
 
 ## Next Steps
 
-It's possible the above proposal could also be used to register AddOns that have been deployed with k8s, but then it becomes desirable to be able to use the pods API to proxy liveness/readiness probes, which increases complexity.
+Since existing AddOns (e.g. kube-ui, kube-dns) already register themselves as internal services, this proposal puts them on a similar footing to externally hosted components.
 
-It was also suggested that this proposal overlaps somewhat with the Nodes API, and that nodes could also be registered as components.
+Services could be made to include both internal pods and external targets (in the same service).
 
-There was desire expressed to delegate to or integration with the service and/or endpoints APIs to store component location, but because service endpoints are only usable within a cluster, it's not guaranteed that the components (namely the component-controller) will be able to access them. The probes also still need to have a path to the liveness/readiness endpoints, which may not be the root endpoint exposed by the endpoints/service API.
+It was also suggested that this proposal overlaps somewhat with the Nodes API, and that nodes (kubelets/kube-proxy) could also be registered as ExternalServiceTargets.
 
 Because this proposal includes API changes, it's likely to be put into the experimental API group.
 
 Because of the desire for reverse compatibility, the existing `/componentstatuses` endpoint will likely be deprecated and eventually removed.
+
 
 <!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
 [![Analytics](https://kubernetes-site.appspot.com/UA-36037335-10/GitHub/docs/proposals/component-registration.md?pixel)]()
