@@ -66,18 +66,22 @@ Documentation for other releases can be found at
 
 A Kubernetes Cluster **Component**...
 
-- Is a required or optional part of the Kubernetes cluster
-- Knows about Kubernetes (speaks the API)
-- Must be registered with Kubernetes to join the cluster
+- Is considered a part of the cluster
+- Must register (or be registered) with Kubernetes (apiserver) to join the cluster
+- Must know about Kubernetes (speak the API)
+- Must be deployed/managed by the cluster admin/operator (rather than a user)
+- Should expose a method for remotely probing the liveness and readiness of each instance (e.g. tcp/http/https).
+- May be scheduled/deployed on the cluster (primary components vs addon components)
+- May be required for the cluster to function (required vs optional)
+- May be added/removed from a running cluster (mutable cluster component membership over time)
+- May require admin API access (privileged behavior)
 - May consist of one or more instances
 - May be deployed on different (network accessible) machines
-- Must exposes a method for remotely probing the liveness and readiness of each instance (e.g. tcp/http/https).
-- May be added to or removed from a running cluster (if optional)
 - May be upgraded over time
 
 The **Primary Components** currently consist of the apiserver, controller-manager, and scheduler.
 
-The"**Hyperkube** is a single binary that can be run as each of the three primary component binaries. Hyperkube may also refer to the set (or pod) of primary component containers or the (virtual) machine that those containers run on.
+The"**Hyperkube** is a single binary that can be run as each of the three primary component binaries. Hyperkube may also refer to the set (or pod) of primary component containers or the (virtual) machine that those containers run on. Not all Kubernetes deployments use or should be required to use the Hyperkube.
 
 **Master** has been sometimes used in reference to both the APIServer component and the (virtual) machine which hosts the three primary components. I'm going to avoid this term, because it is ambiguous.
 
@@ -91,11 +95,11 @@ The"**Hyperkube** is a single binary that can be run as each of the three primar
 
 **Canary Conditions** are conditions which indicate problems. Liveness and Readiness are canary conditions because when failing, they indicate problems, but do not guarantee health when not failing. Because of this distinction, and to avoid ambiguity, the term "health" should be avoided in this context.
 
-**Endpoints** is a set of address:port pairs (with optional port name) that describe the providing instances of a Service. Currently only Ready addresses are included, but there is a PR to add NotReady addresses: #13778. Internal Endpoints are created and managed by the Endpoints Controller.
+**Endpoints** is a namespaced Kubernetes API that describes a set of address:port pairs (with optional port name) that describe the providing instances of a Service. Currently only Ready addresses are included, but there is a PR to add NotReady addresses: #13778. Internal Endpoints are created and managed automatically by the Endpoints Controller. External Endpoints are created and managed manually by Kubernetes users.
 
-An **Internal Service** is a Service defined by Pod Selectors. Internal Endpoints are created from Internal Services.
+An **Internal Service** is a Service defined by Pod Selectors. Internal Endpoints for each Internal Service are created and managed automatically by the Endpoints Controller based on ServiceSpec Selectors.
 
-An **External Service** is a Service without Selectors. External Endpoints must be created manually (or at least are not created by vanilla Kubernetes components).
+An **External Service** is a Service without Selectors. External Endpoints for each External Service are created and managed manually (or at least are not currently created/managed by primary Kubernetes components).
 
 
 ## Abstract
@@ -192,20 +196,29 @@ Unfortunately, ComponentStatuses is almost not worth the effort to fix. Instead 
 
 Since it's seemingly impossible to fix Endpoints Problem \#1 without breaking reverse compatibility, this proposal punts on \#1 (until v2 allows reverse-incompatibility) and focuses on fixing \#2 for now. #13778 handles increasing the scope of Endpoints to cover both Ready and NotReady addresses, which is better than nothing, but not as flexible as having an array of conditions, like other -Status API resources.
 
-To fix Endpoints Problem \#2, this proposal moves the specification (and status) of external service provider addresses to its own top-level namespaced API resource (provisionally called **ExternalServiceTarget**). Endpoints Controller will then continue to manage the creation/updates/deletion of Endpoints for internal services based on a selection of Pod instances, but will also do the same for external services based on a selection of ExternalServiceTargets. Endpoints then becomes a (conceptually) read-only API for the user.
+To fix Endpoints Problem \#2, this proposal moves the specification (and status) of external service provider addresses to its own namespaced API resource (provisionally called **ExternalServiceTarget**). Endpoints Controller will then continue to manage the lifecycle (create/update/delete) of Internal Endpoints based on a selection of Pod instances, but will also do the same for External Endpoints based on a selection of ExternalServiceTargets defined in ServiceSpec.TargetSelector. Endpoints then becomes a (conceptually) read-only API for the user. Endpoints can't actually be read-only, because the Endpoints Controller needs access, but write access may eventually be limited to admin/operator-only.
 
 
 ### API Changes
 
-1. Add new namespaced top level resource: ExternalServiceTarget
-  - Listable, like most other top-level resources
-  - Have both Spec and Status (filterable on both/either)
-  - Spec would have address (ip or host) and ports (optionally named)
-  - Spec would have (optional) LivenessProbe and ReadinessProbe for determining the condition
-  - Status would have an array of [Conditions](../devel/api-conventions.md#typical-status-properties)
-  - Similar to Endpoints, but more static. Defines the set of expected service instances, rather than the set of Ready service instances.
-  - Have to be manually added for non-component external Service instances (e.g. Oracle DB) that do not know about k8s (rather than adding Endpoints)
-  - Can be named with a name generator (similar to pods created by replication controllers) when instances of the same type don't already have unique IDs (generated name is returned in the create response)
+1. Add new namespaced API resource: ExternalServiceTarget
+  - See [Alternate Naming](#alternate-naming)
+  - Similar to Pods
+    - Listable, like most other top-level API resources
+    - Have both Spec and Status (filterable on both/either)
+    - Spec would have (optional) LivenessProbe and ReadinessProbe for determining the condition
+    - Describes a single instance
+    - Can be selected by labels, metadata, spec, and status
+    - Is namespaced (components would use a specific namespace, likely "kube-system")
+    - Status would have an array of [Conditions](../devel/api-conventions.md#typical-status-properties)
+    - Can be named with a name generator (similar to pods created by replication controllers) when instances of the same type don't already have unique IDs (generated name is returned in the create response)
+  - Similar to Endpoints (current External Endpoints usage)
+    - Spec would have address (ip or host) and ports (optionally named) to connect with an external service provider instance
+    - Manually added for non-component External Service provider instances (e.g. Oracle DB) that do not know about k8s (rather than adding Endpoints)
+  - Different from Endpoints
+    - Singular, instead of plural (use -List, namespacing, and labels for grouping)
+    - Includes both Ready & NotReady endpoints
+    - Supports multiple and future conditions (in an extensible Conditions array)
 2. Add a new field ServiceSpec.TargetSelector that selects a subset of ExternalServiceTargets
   - Analogous to the ServiceSpec.Selector-Pod relationship
 3. Add a new ExternalServiceTarget Controller that handles probing ExternalServiceTargets
@@ -275,6 +288,12 @@ ExternalTarget
 [External]ServiceUnit
 [External]ServiceMember
 
+We considered ExternalPod, but figured it would be too confusing, because it doesn't have to be implemented by a Pod.
+
+Including Endpoint in the name is also pretty confusing unless we deprecate and replace Endpoints over time.
+
+ServiceSpec.TargetSelector should probably change based on the name selected for ExternalServiceTarget. Another potential option is ExternalSelector.
+
 
 ## Next Steps
 
@@ -284,9 +303,13 @@ Services could be made to include both internal pods and external targets (in th
 
 It was also suggested that this proposal overlaps somewhat with the Nodes API, and that nodes (kubelets/kube-proxy) could also be registered as ExternalServiceTargets.
 
-Because this proposal includes API changes, it's likely to be put into the experimental API group.
+Because this proposal includes API changes, it's likely to be put into the experimental API group. However, the intent was to make changes that were backwards compatible, at least for "Phase 1".
 
-Because of the desire for reverse compatibility, the existing `/componentstatuses` endpoint will likely be deprecated and eventually removed.
+Because of the desire for reverse compatibility, the existing `/componentstatuses` endpoint will likely be deprecated and eventually removed. We *could* re-implement it using the API added by this proposal, but it's more desirable to also update the API to match existing conventions, which would be effectively equivalent to deleting it and making a new API (e.g. `/components/status`).
+
+A **Phase 2** effort might include rolling up ExternalServiceTarget and Pod conditions to Service conditions. This would require adding multiple configurable policies to determine aggregation logic (e.g all, majority, at least X).
+
+Another interesting option is to add a generic or specific join functionality (think relational DB) that could join Service + ExternalServiceTarget + Pod for filterable queries, without having specific storage for the result. This would make the Endpoints API obsolete.
 
 
 <!-- BEGIN MUNGE: GENERATED_ANALYTICS -->
