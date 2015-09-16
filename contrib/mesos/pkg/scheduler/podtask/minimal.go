@@ -20,6 +20,7 @@ import (
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 )
 
 // bogus numbers that we use to make sure that there's some set of minimal offered resources on the slave
@@ -28,14 +29,16 @@ const (
 	minimalMem  = 0.25
 )
 
-var (
-	DefaultMinimalPredicate = RequireAllPredicate([]FitPredicate{
+func DefaultMinimalPredicate(r *node.Registrator) FitPredicate {
+	return RequireAllPredicate([]FitPredicate{
 		ValidationPredicate,
+		NodeRegisteredPredicate(r),
 		NodeSelectorPredicate,
 		MinimalPodResourcesPredicate,
 		PortsPredicate,
 	}).Fit
-
+}
+var (
 	DefaultMinimalProcurement = AllOrNothingProcurement([]Procurement{
 		ValidateProcurement,
 		NodeProcurement,

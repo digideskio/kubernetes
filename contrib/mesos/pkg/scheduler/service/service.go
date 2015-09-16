@@ -69,6 +69,7 @@ import (
 	"k8s.io/kubernetes/pkg/master/ports"
 	etcdstorage "k8s.io/kubernetes/pkg/storage/etcd"
 	"k8s.io/kubernetes/pkg/tools"
+	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 )
 
 const (
@@ -673,17 +674,6 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Fatalf("misconfigured etcd: %v", err)
 	}
 
-	as := scheduler.NewAllocationStrategy(
-		podtask.DefaultPredicate,
-		podtask.NewDefaultProcurement(s.DefaultContainerCPULimit, s.DefaultContainerMemLimit))
-
-	// downgrade allocation strategy if user disables "account-for-pod-resources"
-	if !s.AccountForPodResources {
-		as = scheduler.NewAllocationStrategy(
-			podtask.DefaultMinimalPredicate,
-			podtask.DefaultMinimalProcurement)
-	}
-
 	// mirror all nodes into the nodeStore
 	nodesClient, err := s.createAPIServerClient()
 	if err != nil {
@@ -692,6 +682,19 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 	nodeStore := cache.NewStore(cache.MetaNamespaceKeyFunc)
 	nodeLW := cache.NewListWatchFromClient(nodesClient, "nodes", api.NamespaceAll, fields.Everything())
 	cache.NewReflector(nodeLW, &api.Node{}, nodeStore, s.nodeRelistPeriod).Run()
+
+	// configure allocation strategy
+	nr := node.NewRegistator(client, nodeStore) // nodeStore is thread safe
+	as := scheduler.NewAllocationStrategy(
+		podtask.DefaultPredicate(nr),
+		podtask.NewDefaultProcurement(s.DefaultContainerCPULimit, s.DefaultContainerMemLimit))
+
+	// downgrade allocation strategy if user disables "account-for-pod-resources"
+	if !s.AccountForPodResources {
+		as = scheduler.NewAllocationStrategy(
+			podtask.DefaultMinimalPredicate(nr),
+			podtask.DefaultMinimalProcurement)
+	}
 
 	fcfs := scheduler.NewFCFSPodScheduler(as, nodeStore)
 	mesosPodScheduler := scheduler.New(scheduler.Config{

@@ -25,6 +25,7 @@ import (
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	"k8s.io/kubernetes/contrib/mesos/pkg/node"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
+	"math/rand"
 )
 
 // NewDefaultProcurement returns the default procurement strategy that combines validation
@@ -104,6 +105,7 @@ func NodeProcurement(t *T, offer *mesos.Offer) error {
 
 	// let the minion create a node object with proper labels before launching the kubelet
 	labels := node.SlaveAttributesToLabels(offer.GetAttributes())
+	labels["random"] = fmt.Sprintf("%d", rand.Int())
 	value, err := json.Marshal(labels)
 	if err != nil {
 		return fmt.Errorf("cannot convert node labels into a minion command line flag: %v", err)

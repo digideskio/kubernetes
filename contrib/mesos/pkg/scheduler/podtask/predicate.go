@@ -25,12 +25,15 @@ import (
 	"k8s.io/kubernetes/pkg/labels"
 )
 
-var DefaultPredicate = RequireAllPredicate([]FitPredicate{
-	ValidationPredicate,
-	NodeSelectorPredicate,
-	PodFitsResourcesPredicate,
-	PortsPredicate,
-}).Fit
+func DefaultPredicate(r *node.Registrator) FitPredicate {
+	return RequireAllPredicate([]FitPredicate{
+		ValidationPredicate,
+		NodeRegisteredPredicate(r),
+		NodeSelectorPredicate,
+		PodFitsResourcesPredicate,
+		PortsPredicate,
+	}).Fit
+}
 
 // FitPredicate implementations determine if the given task "fits" into offered Mesos resources.
 // Neither the task or offer should be modified. Note that the node can be nil.
@@ -79,6 +82,15 @@ func NodeSelectorPredicate(t *T, offer *mesos.Offer, n *api.Node) bool {
 		}
 	}
 	return true
+}
+
+func NodeRegisteredPredicate(r *node.Registrator) FitPredicate {
+	return func(t *T, offer *mesos.Offer, n *api.Node) bool {
+		if r == nil {
+			return true
+		}
+		return !r.Blocked(offer.GetHostname())
+	}
 }
 
 func PortsPredicate(t *T, offer *mesos.Offer, _ *api.Node) bool {
