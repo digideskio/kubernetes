@@ -27,6 +27,7 @@ import (
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/errors"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
+	"k8s.io/kubernetes/pkg/util/validation"
 )
 
 const (
@@ -118,12 +119,27 @@ func SlaveAttributesToLabels(attrs []*mesos.Attribute) map[string]string {
 			continue
 		}
 
+		var v string
+		k := labelPrefix + a.GetName()
+
 		switch a.GetType() {
 		case mesos.Value_TEXT:
-			l[labelPrefix+a.GetName()] = a.GetText().GetValue()
+			v = a.GetText().GetValue()
 		case mesos.Value_SCALAR:
-			l[labelPrefix+a.GetName()] = strconv.FormatFloat(a.GetScalar().GetValue(), 'G', -1, 64)
+			v = strconv.FormatFloat(a.GetScalar().GetValue(), 'G', -1, 64)
 		}
+
+		if !validation.IsQualifiedName(k) {
+			log.V(3).Infof("ignoring invalid node label name %s: %s", k, v)
+			continue
+		}
+
+		if !validation.IsValidLabelValue(v) {
+			log.V(3).Infof("ignoring invalid node label value %s: %s", k, v)
+			continue
+		}
+
+		l[k] = v
 	}
 	return l
 }
