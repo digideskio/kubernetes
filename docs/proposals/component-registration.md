@@ -225,12 +225,13 @@ To fix Endpoints Problem \#2, this proposal moves the specification (and status)
   - Probe results update ExternalServiceTarget.Status.Conditions
 4. Modify Endpoints Controller to manage ExternalServiceTarget Endpoints
   - Readiness from ExternalServiceTarget.Status.Conditions analogous to PodStatus.Conditions
-5. Modify components to self-register ExternalServiceTargets (one per component instance) instead of an Endpoint
-  - Group ExternalServiceTargets (component instances) with labels (e.g. "type=apiserver", "component=core")
-6. Register component Services (with ServiceSpec.TargetSelector) as part of cluster deployment
+5. Modify the Primary Components to self-register ExternalServiceTargets (one per component instance) instead of an Endpoint
+  - Group ExternalServiceTargets (component instances) with labels (e.g. "type=component", "component-type=core")
+6. Modify the Addon Components' Pod and Service registration to use similar labels (e.g. "type=component", "component-type=addon")
+7. Register component Services (with ServiceSpec.TargetSelector) as part of cluster deployment
   - Services of new components can also be added at runtime, before any instances exist. Each instance would self-register a ExternalServiceTargets.
-7. Modify Service to be support both internal and external targets in the same Service (Pods + ExternalServiceTargets)
-8. Deprecate `/componentsstatuses` in favor of requesting a filtered list of ExternalServiceTargets
+8. Modify Service to be support both internal and external targets in the same Service (Pods + ExternalServiceTargets)
+9. Deprecate `/componentsstatuses` in favor of requesting a filtered list of ExternalServiceTargets
   - ExternalServiceTargets are external-only, but have generic conditions (liveness and readiness)
   - Endpoints are external + internal, but only have readiness (for now)
 
