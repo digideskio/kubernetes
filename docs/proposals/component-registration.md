@@ -79,7 +79,9 @@ A Kubernetes Cluster **Component**...
 - May be deployed on different (network accessible) machines
 - May be upgraded over time
 
-The **Primary Components** currently consist of the apiserver, controller-manager, and scheduler.
+The **Primary Components** currently include apiserver, controller-manager, and scheduler. The lifecycle of these components is managed by some external system. These components are required for Kubernetes to function.
+
+The **Addon Components** currently include kube-dns and kube-ui. The lifecycle of these components is managed by the kubernetes cluster that they provide functionality to. These components add functionality, but are not required for Kubernetes to function. Kubernetes currently ships with some of these required for "conformance", but they're technically not required for minimal orchestration and scheduling.
 
 The"**Hyperkube** is a single binary that can be run as each of the three primary component binaries. Hyperkube may also refer to the set (or pod) of primary component containers or the (virtual) machine that those containers run on. Not all Kubernetes deployments use or should be required to use the Hyperkube.
 
