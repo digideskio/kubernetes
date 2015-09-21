@@ -280,7 +280,7 @@ func (o *EventObserver) PastEventf(object runtime.Object, timestamp unversioned.
 
 func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, msgAndArgs ...interface{}) bool {
 	// parse msgAndArgs: first possibly a duration, otherwise a format string with further args
-	timeout := time.Second * 2
+	timeout := time.Minute
 	msg := "event not received"
 	msgArgStart := 0
 	if len(msgAndArgs) > 0 {
@@ -512,7 +512,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 		// and wait that framework message is sent to executor
 		mockDriver.AssertNumberOfCalls(t, "SendFrameworkMessage", 1)
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatalf("timed out waiting for launchTasks call")
 	}
 
@@ -537,7 +537,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 			}
 			t.Fatalf("unknown offer used to start a pod")
 			return nil, nil, nil
-		case <-time.After(5 * time.Second):
+		case <-time.After(time.Minute):
 			t.Fatal("timed out waiting for launchTasks")
 			return nil, nil, nil
 		}
@@ -587,7 +587,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 		// report back that the task is finished
 		testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask.taskInfo, mesos.TaskState_TASK_FINISHED))
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("timed out waiting for KillTask")
 	}
 
