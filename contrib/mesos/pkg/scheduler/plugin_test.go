@@ -34,7 +34,7 @@ import (
 
 	log "github.com/golang/glog"
 	mesos "github.com/mesos/mesos-go/mesosproto"
-	util "github.com/mesos/mesos-go/mesosutil"
+	"github.com/mesos/mesos-go/mesosutil"
 	bindings "github.com/mesos/mesos-go/scheduler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -46,6 +46,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
+	"k8s.io/kubernetes/pkg/util"
 )
 
 // A apiserver mock which partially mocks the pods API
@@ -231,16 +232,16 @@ func NewTestPod() (*api.Pod, int) {
 // Offering some cpus and memory and the 8000-9000 port range
 func NewTestOffer(id string) *mesos.Offer {
 	hostname := "some_hostname"
-	cpus := util.NewScalarResource("cpus", 3.75)
-	mem := util.NewScalarResource("mem", 940)
+	cpus := mesosutil.NewScalarResource("cpus", 3.75)
+	mem := mesosutil.NewScalarResource("mem", 940)
 	var port8000 uint64 = 8000
 	var port9000 uint64 = 9000
 	ports8000to9000 := mesos.Value_Range{Begin: &port8000, End: &port9000}
-	ports := util.NewRangesResource("ports", []*mesos.Value_Range{&ports8000to9000})
+	ports := mesosutil.NewRangesResource("ports", []*mesos.Value_Range{&ports8000to9000})
 	return &mesos.Offer{
-		Id:        util.NewOfferID(id),
+		Id:        mesosutil.NewOfferID(id),
 		Hostname:  &hostname,
-		SlaveId:   util.NewSlaveID(hostname),
+		SlaveId:   mesosutil.NewSlaveID(hostname),
 		Resources: []*mesos.Resource{cpus, mem, ports},
 	}
 }
@@ -280,7 +281,7 @@ func (o *EventObserver) PastEventf(object runtime.Object, timestamp unversioned.
 
 func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, msgAndArgs ...interface{}) bool {
 	// parse msgAndArgs: first possibly a duration, otherwise a format string with further args
-	timeout := time.Second * 2
+	timeout := util.ForeverTestTimeout
 	msg := "event not received"
 	msgArgStart := 0
 	if len(msgAndArgs) > 0 {
@@ -387,9 +388,9 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	defer testApiServer.server.Close()
 
 	// create executor with some data for static pods if set
-	executor := util.NewExecutorInfo(
-		util.NewExecutorID("executor-id"),
-		util.NewCommandInfo("executor-cmd"),
+	executor := mesosutil.NewExecutorInfo(
+		mesosutil.NewExecutorID("executor-id"),
+		mesosutil.NewCommandInfo("executor-cmd"),
 	)
 	executor.Data = []byte{0, 1, 2}
 
@@ -474,8 +475,8 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	// tell scheduler to be registered
 	testScheduler.Registered(
 		mockDriver,
-		util.NewFrameworkID("kubernetes-id"),
-		util.NewMasterInfo("master-id", (192<<24)+(168<<16)+(0<<8)+1, 5050),
+		mesosutil.NewFrameworkID("kubernetes-id"),
+		mesosutil.NewMasterInfo("master-id", (192<<24)+(168<<16)+(0<<8)+1, 5050),
 	)
 
 	// wait for being elected
@@ -512,7 +513,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 		// and wait that framework message is sent to executor
 		mockDriver.AssertNumberOfCalls(t, "SendFrameworkMessage", 1)
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(util.ForeverTestTimeout):
 		t.Fatalf("timed out waiting for launchTasks call")
 	}
 
@@ -537,7 +538,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 			}
 			t.Fatalf("unknown offer used to start a pod")
 			return nil, nil, nil
-		case <-time.After(5 * time.Second):
+		case <-time.After(util.ForeverTestTimeout):
 			t.Fatal("timed out waiting for launchTasks")
 			return nil, nil, nil
 		}
@@ -587,7 +588,7 @@ func TestPlugin_LifeCycle(t *testing.T) {
 		// report back that the task is finished
 		testScheduler.StatusUpdate(mockDriver, newTaskStatusForTask(launchedTask.taskInfo, mesos.TaskState_TASK_FINISHED))
 
-	case <-time.After(5 * time.Second):
+	case <-time.After(util.ForeverTestTimeout):
 		t.Fatal("timed out waiting for KillTask")
 	}
 
