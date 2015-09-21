@@ -61,11 +61,13 @@ func NewTestServer(t *testing.T, namespace string, mockPodListWatch *MockPodsLis
 	}
 	mux := http.NewServeMux()
 
-	mux.HandleFunc(testapi.Default.ResourcePath("pods", namespace, ""), func(w http.ResponseWriter, r *http.Request) {
+	podListHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		pods := mockPodListWatch.Pods()
 		w.Write([]byte(runtime.EncodeOrDie(testapi.Default.Codec(), &pods)))
-	})
+	}
+	mux.HandleFunc(testapi.Default.ResourcePath("pods", namespace, ""), podListHandler)
+	mux.HandleFunc(testapi.Default.ResourcePath("pods", "", ""), podListHandler)
 
 	podsPrefix := testapi.Default.ResourcePath("pods", namespace, "") + "/"
 	mux.HandleFunc(podsPrefix, func(w http.ResponseWriter, r *http.Request) {
