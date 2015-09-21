@@ -377,7 +377,6 @@ func TestPlugin_New(t *testing.T) {
 // and play through the whole life cycle of the plugin while creating pods, deleting
 // and failing them.
 func TestPlugin_LifeCycle(t *testing.T) {
-	t.Skip("This test is flaky, see #11901")
 	assert := &EventAssertions{*assert.New(t)}
 
 	// create a fake pod watch. We use that below to submit new pods to the scheduler
@@ -489,14 +488,14 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	podListWatch.Add(pod, true) // notify watchers
 
 	// wait for failedScheduling event because there is no offer
-	assert.EventWithReason(eventObserver, "failedScheduling", "failedScheduling event not received")
+	assert.EventWithReason(eventObserver, FailedScheduling, "failedScheduling event not received")
 
 	// add some matching offer
 	offers := []*mesos.Offer{NewTestOffer(fmt.Sprintf("offer%d", i))}
 	testScheduler.ResourceOffers(nil, offers)
 
 	// and wait for scheduled pod
-	assert.EventWithReason(eventObserver, "scheduled")
+	assert.EventWithReason(eventObserver, Scheduled)
 	select {
 	case launchedTask := <-launchedTasks:
 		// report back that the task has been staged, and then started by mesos
@@ -520,13 +519,13 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	// Launch a pod and wait until the scheduler driver is called
 	schedulePodWithOffers := func(pod *api.Pod, offers []*mesos.Offer) (*api.Pod, *LaunchedTask, *mesos.Offer) {
 		// wait for failedScheduling event because there is no offer
-		assert.EventWithReason(eventObserver, "failedScheduling", "failedScheduling event not received")
+		assert.EventWithReason(eventObserver, FailedScheduling, "failedScheduling event not received")
 
 		// supply a matching offer
 		testScheduler.ResourceOffers(mockDriver, offers)
 
 		// and wait to get scheduled
-		assert.EventWithReason(eventObserver, "scheduled")
+		assert.EventWithReason(eventObserver, Scheduled)
 
 		// wait for driver.launchTasks call
 		select {
