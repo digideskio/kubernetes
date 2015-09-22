@@ -36,30 +36,30 @@ import (
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 )
 
-type LaunchedTask struct {
+type launchedTask struct {
 	offerId  mesos.OfferID
 	taskInfo *mesos.TaskInfo
 }
 
-type LifecycleTest struct {
-	ApiServer     *TestServer
-	Driver        *driver.JoinableDriver
-	EventObs      *EventObserver
-	Plugin        scheduler.PluginInterface
-	PodsListWatch *MockPodsListWatch
-	Scheduler     *scheduler.KubernetesScheduler
-	SchedulerProc *ha.SchedulerProcess
+type lifecycleTest struct {
+	apiServer     *testServer
+	driver        *driver.JoinableDriver
+	eventObs      *eventObserver
+	plugin        scheduler.PluginInterface
+	podsListWatch *mockPodsListWatch
+	scheduler     *scheduler.KubernetesScheduler
+	schedulerProc *ha.SchedulerProcess
 	t             *testing.T
 }
 
-func NewLifecycleTest(t *testing.T) LifecycleTest {
-	assert := &EventAssertions{*assert.New(t)}
+func newLifecycleTest(t *testing.T) lifecycleTest {
+	assert := &eventAssertions{*assert.New(t)}
 
 	// create a fake pod watch. We use that below to submit new pods to the scheduler
-	podsListWatch := NewMockPodsListWatch(api.PodList{})
+	podsListWatch := newMockPodsListWatch(api.PodList{})
 
 	// create fake apiserver
-	ApiServer := NewTestServer(t, api.NamespaceDefault, podsListWatch)
+	ApiServer := newTestServer(t, api.NamespaceDefault, podsListWatch)
 
 	// create executor with some data for static pods if set
 	executor := util.NewExecutorInfo(
@@ -98,56 +98,56 @@ func NewLifecycleTest(t *testing.T) LifecycleTest {
 	config := sched.NewPluginConfig(
 		schedProc.Terminal(),
 		http.DefaultServeMux,
-		&podsListWatch.ListWatch,
+		&podsListWatch.listWatch,
 	)
 	assert.NotNil(config)
 
 	// make events observable
-	eventObs := NewEventObserver()
+	eventObs := newEventObserver()
 	config.Recorder = eventObs
 
 	// create plugin
 	plugin := scheduler.NewPlugin(config)
 	assert.NotNil(plugin)
 
-	return LifecycleTest{
-		ApiServer:     ApiServer,
-		Driver:        &driver.JoinableDriver{},
-		EventObs:      eventObs,
-		Plugin:        plugin,
-		PodsListWatch: podsListWatch,
-		Scheduler:     sched,
-		SchedulerProc: schedProc,
+	return lifecycleTest{
+		apiServer:     ApiServer,
+		driver:        &driver.JoinableDriver{},
+		eventObs:      eventObs,
+		plugin:        plugin,
+		podsListWatch: podsListWatch,
+		scheduler:     sched,
+		schedulerProc: schedProc,
 		t:             t,
 	}
 }
 
-func (lt LifecycleTest) Start() <-chan LaunchedTask {
-	assert := &EventAssertions{*assert.New(lt.t)}
-	lt.Plugin.Run(lt.SchedulerProc.Terminal())
+func (lt lifecycleTest) Start() <-chan launchedTask {
+	assert := &eventAssertions{*assert.New(lt.t)}
+	lt.plugin.Run(lt.schedulerProc.Terminal())
 
 	// init scheduler
-	err := lt.Scheduler.Init(
-		lt.SchedulerProc.Master(),
-		lt.Plugin,
+	err := lt.scheduler.Init(
+		lt.schedulerProc.Master(),
+		lt.plugin,
 		http.DefaultServeMux,
 	)
 	assert.NoError(err)
 
-	lt.Driver.On("Start").Return(mesos.Status_DRIVER_RUNNING, nil).Once()
-	started := lt.Driver.Upon()
+	lt.driver.On("Start").Return(mesos.Status_DRIVER_RUNNING, nil).Once()
+	started := lt.driver.Upon()
 
-	lt.Driver.On("ReconcileTasks",
+	lt.driver.On("ReconcileTasks",
 		mock.AnythingOfType("[]*mesosproto.TaskStatus"),
 	).Return(mesos.Status_DRIVER_RUNNING, nil)
 
-	lt.Driver.On("SendFrameworkMessage",
+	lt.driver.On("SendFrameworkMessage",
 		mock.AnythingOfType("*mesosproto.ExecutorID"),
 		mock.AnythingOfType("*mesosproto.SlaveID"),
 		mock.AnythingOfType("string"),
 	).Return(mesos.Status_DRIVER_RUNNING, nil)
 
-	launchedTasks := make(chan LaunchedTask, 1)
+	launchedTasks := make(chan launchedTask, 1)
 
 	launchTasksFunc := func(args mock.Arguments) {
 		offerIDs := args.Get(0).([]*mesos.OfferID)
@@ -155,36 +155,36 @@ func (lt LifecycleTest) Start() <-chan LaunchedTask {
 		assert.Equal(1, len(offerIDs))
 		assert.Equal(1, len(taskInfos))
 
-		launchedTasks <- LaunchedTask{
+		launchedTasks <- launchedTask{
 			offerId:  *offerIDs[0],
 			taskInfo: taskInfos[0],
 		}
 	}
 
-	lt.Driver.On("LaunchTasks",
+	lt.driver.On("LaunchTasks",
 		mock.AnythingOfType("[]*mesosproto.OfferID"),
 		mock.AnythingOfType("[]*mesosproto.TaskInfo"),
 		mock.AnythingOfType("*mesosproto.Filters"),
 	).Return(mesos.Status_DRIVER_RUNNING, nil).Run(launchTasksFunc)
 
-	lt.Driver.On("DeclineOffer",
+	lt.driver.On("DeclineOffer",
 		mock.AnythingOfType("*mesosproto.OfferID"),
 		mock.AnythingOfType("*mesosproto.Filters"),
 	).Return(mesos.Status_DRIVER_RUNNING, nil)
 
 	// elect master with mock driver
 	driverFactory := ha.DriverFactory(func() (bindings.SchedulerDriver, error) {
-		return lt.Driver, nil
+		return lt.driver, nil
 	})
-	lt.SchedulerProc.Elect(driverFactory)
-	elected := lt.SchedulerProc.Elected()
+	lt.schedulerProc.Elect(driverFactory)
+	elected := lt.schedulerProc.Elected()
 
 	// driver will be started
 	<-started
 
 	// tell scheduler to be registered
-	lt.Scheduler.Registered(
-		lt.Driver,
+	lt.scheduler.Registered(
+		lt.driver,
 		util.NewFrameworkID("kubernetes-id"),
 		util.NewMasterInfo("master-id", (192<<24)+(168<<16)+(0<<8)+1, 5050),
 	)
@@ -194,10 +194,10 @@ func (lt LifecycleTest) Start() <-chan LaunchedTask {
 	return launchedTasks
 }
 
-func (lt LifecycleTest) Close() {
-	lt.ApiServer.server.Close()
+func (lt lifecycleTest) Close() {
+	lt.apiServer.server.Close()
 }
 
-func (lt LifecycleTest) End() <-chan struct{} {
-	return lt.SchedulerProc.End()
+func (lt lifecycleTest) End() <-chan struct{} {
+	return lt.schedulerProc.End()
 }

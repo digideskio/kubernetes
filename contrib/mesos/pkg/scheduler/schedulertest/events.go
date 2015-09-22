@@ -28,42 +28,42 @@ import (
 )
 
 // Add assertions to reason about event streams
-type Event struct {
-	Object  runtime.Object
-	Reason  string
-	Message string
+type event struct {
+	object  runtime.Object
+	reason  string
+	message string
 }
 
-type EventPredicate func(e Event) bool
+type eventPredicate func(e event) bool
 
-type EventAssertions struct {
+type eventAssertions struct {
 	assert.Assertions
 }
 
 // EventObserver implements record.EventRecorder for the purposes of validation via EventAssertions.
-type EventObserver struct {
-	fifo chan Event
+type eventObserver struct {
+	fifo chan event
 }
 
-func NewEventObserver() *EventObserver {
-	return &EventObserver{
-		fifo: make(chan Event, 1000),
+func newEventObserver() *eventObserver {
+	return &eventObserver{
+		fifo: make(chan event, 1000),
 	}
 }
 
-func (o *EventObserver) Event(object runtime.Object, reason, message string) {
-	o.fifo <- Event{Object: object, Reason: reason, Message: message}
+func (o *eventObserver) Event(object runtime.Object, reason, message string) {
+	o.fifo <- event{object: object, reason: reason, message: message}
 }
 
-func (o *EventObserver) Eventf(object runtime.Object, reason, messageFmt string, args ...interface{}) {
-	o.fifo <- Event{Object: object, Reason: reason, Message: fmt.Sprintf(messageFmt, args...)}
+func (o *eventObserver) Eventf(object runtime.Object, reason, messageFmt string, args ...interface{}) {
+	o.fifo <- event{object: object, reason: reason, message: fmt.Sprintf(messageFmt, args...)}
 }
 
-func (o *EventObserver) PastEventf(object runtime.Object, timestamp unversioned.Time, reason, messageFmt string, args ...interface{}) {
-	o.fifo <- Event{Object: object, Reason: reason, Message: fmt.Sprintf(messageFmt, args...)}
+func (o *eventObserver) PastEventf(object runtime.Object, timestamp unversioned.Time, reason, messageFmt string, args ...interface{}) {
+	o.fifo <- event{object: object, reason: reason, message: fmt.Sprintf(messageFmt, args...)}
 }
 
-func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, msgAndArgs ...interface{}) bool {
+func (a *eventAssertions) Event(observer *eventObserver, pred eventPredicate, msgAndArgs ...interface{}) bool {
 	// parse msgAndArgs: first possibly a duration, otherwise a format string with further args
 	timeout := time.Minute
 	msg := "event not received"
@@ -90,11 +90,11 @@ func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, ms
 					result <- false
 					return
 				} else if pred(e) {
-					log.V(3).Infof("found asserted event for reason '%v': %v", e.Reason, e.Message)
+					log.V(3).Infof("found asserted event for reason '%v': %v", e.reason, e.message)
 					result <- true
 					return
 				} else {
-					log.V(5).Infof("ignoring not-asserted event for reason '%v': %v", e.Reason, e.Message)
+					log.V(5).Infof("ignoring not-asserted event for reason '%v': %v", e.reason, e.message)
 				}
 			case _, ok := <-stop:
 				if !ok {
@@ -114,8 +114,8 @@ func (a *EventAssertions) Event(observer *EventObserver, pred EventPredicate, ms
 	}
 }
 
-func (a *EventAssertions) EventWithReason(observer *EventObserver, reason string, msgAndArgs ...interface{}) bool {
-	return a.Event(observer, func(e Event) bool {
-		return e.Reason == reason
+func (a *eventAssertions) EventWithReason(observer *eventObserver, reason string, msgAndArgs ...interface{}) bool {
+	return a.Event(observer, func(e event) bool {
+		return e.reason == reason
 	}, msgAndArgs...)
 }

@@ -27,19 +27,19 @@ import (
 )
 
 // Create mock of pods ListWatch, usually listening on the apiserver pods watch endpoint
-type MockPodsListWatch struct {
-	ListWatch   cache.ListWatch
+type mockPodsListWatch struct {
+	listWatch   cache.ListWatch
 	fakeWatcher *watch.FakeWatcher
 	list        api.PodList
 	lock        sync.Mutex
 }
 
-func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
-	lw := MockPodsListWatch{
+func newMockPodsListWatch(initialPodList api.PodList) *mockPodsListWatch {
+	lw := mockPodsListWatch{
 		fakeWatcher: watch.NewFake(),
 		list:        initialPodList,
 	}
-	lw.ListWatch = cache.ListWatch{
+	lw.listWatch = cache.ListWatch{
 		WatchFunc: func(resourceVersion string) (watch.Interface, error) {
 			return lw.fakeWatcher, nil
 		},
@@ -54,14 +54,14 @@ func NewMockPodsListWatch(initialPodList api.PodList) *MockPodsListWatch {
 	return &lw
 }
 
-func (lw *MockPodsListWatch) Pods() api.PodList {
+func (lw *mockPodsListWatch) Pods() api.PodList {
 	lw.lock.Lock()
 	defer lw.lock.Unlock()
 
 	return lw.list
 }
 
-func (lw *MockPodsListWatch) Pod(name string) *api.Pod {
+func (lw *mockPodsListWatch) Pod(name string) *api.Pod {
 	lw.lock.Lock()
 	defer lw.lock.Unlock()
 
@@ -74,7 +74,7 @@ func (lw *MockPodsListWatch) Pod(name string) *api.Pod {
 	return nil
 }
 
-func (lw *MockPodsListWatch) Add(pod *api.Pod, notify bool) {
+func (lw *mockPodsListWatch) Add(pod *api.Pod, notify bool) {
 	lw.lock.Lock()
 	defer lw.lock.Unlock()
 
@@ -84,7 +84,7 @@ func (lw *MockPodsListWatch) Add(pod *api.Pod, notify bool) {
 	}
 }
 
-func (lw *MockPodsListWatch) Modify(pod *api.Pod, notify bool) {
+func (lw *mockPodsListWatch) Modify(pod *api.Pod, notify bool) {
 	lw.lock.Lock()
 	defer lw.lock.Unlock()
 
@@ -100,7 +100,7 @@ func (lw *MockPodsListWatch) Modify(pod *api.Pod, notify bool) {
 	log.Fatalf("Cannot find pod %v to modify in MockPodsListWatch", pod.Name)
 }
 
-func (lw *MockPodsListWatch) Delete(pod *api.Pod, notify bool) {
+func (lw *mockPodsListWatch) Delete(pod *api.Pod, notify bool) {
 	lw.lock.Lock()
 	defer lw.lock.Unlock()
 

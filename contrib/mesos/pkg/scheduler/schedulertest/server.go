@@ -27,14 +27,14 @@ import (
 )
 
 // A apiserver mock which partially mocks the pods API
-type TestServer struct {
+type testServer struct {
 	server *httptest.Server
 	stats  map[string]uint
 	lock   sync.Mutex
 }
 
-func NewTestServer(t *testing.T, namespace string, mockPodListWatch *MockPodsListWatch) *TestServer {
-	ts := TestServer{
+func newTestServer(t *testing.T, namespace string, mockPodListWatch *mockPodsListWatch) *testServer {
+	ts := testServer{
 		stats: map[string]uint{},
 	}
 	mux := http.NewServeMux()
@@ -78,7 +78,7 @@ func NewTestServer(t *testing.T, namespace string, mockPodListWatch *MockPodsLis
 	return &ts
 }
 
-func (ts *TestServer) Stats(name string) uint {
+func (ts *testServer) Stats(name string) uint {
 	ts.lock.Lock()
 	defer ts.lock.Unlock()
 
