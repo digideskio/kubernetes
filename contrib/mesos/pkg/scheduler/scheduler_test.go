@@ -26,6 +26,7 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/proc"
 	schedcfg "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
+	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/schedulertest/driver"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/slave"
 )
 
@@ -240,8 +241,7 @@ func TestDisconnect(t *testing.T) {
 
 //test we can handle different status updates, TODO check state transitions
 func TestStatus_Update(t *testing.T) {
-
-	mockdriver := MockSchedulerDriver{}
+	mockdriver := driver.MockSchedulerDriver{}
 	// setup expectations
 	mockdriver.On("KillTask", util.NewTaskID("test-task-001")).Return(mesos.Status_DRIVER_RUNNING, nil)
 
