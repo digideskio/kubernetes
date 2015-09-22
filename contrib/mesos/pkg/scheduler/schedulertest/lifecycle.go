@@ -59,7 +59,7 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	podsListWatch := newMockPodsListWatch(api.PodList{})
 
 	// create fake apiserver
-	ApiServer := newTestServer(t, api.NamespaceDefault, podsListWatch)
+	apiServer := newTestServer(t, api.NamespaceDefault, podsListWatch)
 
 	// create executor with some data for static pods if set
 	executor := util.NewExecutorInfo(
@@ -80,7 +80,7 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	sched := scheduler.New(scheduler.Config{
 		Executor: executor,
 		Client: client.NewOrDie(&client.Config{
-			Host:    ApiServer.server.URL,
+			Host:    apiServer.server.URL,
 			Version: testapi.Default.Version(),
 		}),
 		Scheduler: scheduler.NewFCFSPodScheduler(strategy),
@@ -111,7 +111,7 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 	assert.NotNil(plugin)
 
 	return lifecycleTest{
-		apiServer:     ApiServer,
+		apiServer:     apiServer,
 		driver:        &driver.JoinableDriver{},
 		eventObs:      eventObs,
 		plugin:        plugin,
