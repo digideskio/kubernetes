@@ -29,7 +29,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/api/unversioned"
@@ -265,12 +264,6 @@ func TestPlugin_LifeCycle(t *testing.T) {
 	pod, launched, _ = launchTestPod()
 	lt.podsListWatch.Delete(pod, false) // not notifying the watchers
 	failPodFromExecutor(launched.taskInfo)
-
-	podKey, _ := podtask.MakePodKey(api.NewDefaultContext(), pod.Name)
-	assertext.EventuallyTrue(t, time.Second, func() bool {
-		t, _ := lt.Plugin.api.tasks().ForPod(podKey)
-		return t == nil
-	})
 
 	// 2. with pod still on the apiserver, not bound
 	//    expected: pod is rescheduled

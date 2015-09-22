@@ -87,10 +87,6 @@ func newLifecycleTest(t *testing.T) lifecycleTest {
 		Schedcfg:  *schedcfg.CreateDefaultConfig(),
 	})
 
-	assert.NotNil(sched.client, "client is nil")
-	assert.NotNil(sched.executor, "executor is nil")
-	assert.NotNil(sched.offers, "offer registry is nil")
-
 	// create scheduler process
 	schedProc := ha.New(sched)
 
