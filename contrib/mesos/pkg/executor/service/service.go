@@ -61,9 +61,10 @@ const (
 
 type KubeletExecutorServer struct {
 	*app.KubeletServer
-	SuicideTimeout time.Duration
-	ShutdownFD     int
-	ShutdownFIFO   string
+	SuicideTimeout    time.Duration
+	LaunchGracePeriod time.Duration
+	ShutdownFD        int
+	ShutdownFIFO      string
 }
 
 func NewKubeletExecutorServer() *KubeletExecutorServer {
@@ -87,6 +88,7 @@ func (s *KubeletExecutorServer) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&s.SuicideTimeout, "suicide-timeout", s.SuicideTimeout, "Self-terminate after this period of inactivity. Zero disables suicide watch.")
 	fs.IntVar(&s.ShutdownFD, "shutdown-fd", s.ShutdownFD, "File descriptor used to signal shutdown to external watchers, requires shutdown-fifo flag")
 	fs.StringVar(&s.ShutdownFIFO, "shutdown-fifo", s.ShutdownFIFO, "FIFO used to signal shutdown to external watchers, requires shutdown-fd flag")
+	fs.DurationVar(&s.LaunchGracePeriod, "launch-grace-period", s.LaunchGracePeriod, "Launch grace period after which launching tasks will be cancelled . Zero disables launch cancellation.")
 }
 
 // returns a Closer that should be closed to signal impending shutdown, but only if ShutdownFD
@@ -355,13 +357,14 @@ func (ks *KubeletExecutorServer) createAndInitKubelet(
 	kubeletFinished := make(chan struct{})
 	staticPodsConfigPath := filepath.Join(kc.RootDirectory, "static-pods")
 	exec := executor.New(executor.Config{
-		Kubelet:         klet,
-		Updates:         updates,
-		SourceName:      MESOS_CFG_SOURCE,
-		APIClient:       kc.KubeClient,
-		Docker:          kc.DockerClient,
-		SuicideTimeout:  ks.SuicideTimeout,
-		KubeletFinished: kubeletFinished,
+		Kubelet:           klet,
+		Updates:           updates,
+		SourceName:        MESOS_CFG_SOURCE,
+		APIClient:         kc.KubeClient,
+		Docker:            kc.DockerClient,
+		SuicideTimeout:    ks.SuicideTimeout,
+		LaunchGracePeriod: ks.LaunchGracePeriod,
+		KubeletFinished:   kubeletFinished,
 		ShutdownAlert: func() {
 			if shutdownCloser != nil {
 				if e := shutdownCloser.Close(); e != nil {
