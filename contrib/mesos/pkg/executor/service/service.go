@@ -89,7 +89,7 @@ func (s *KubeletExecutorServer) AddFlags(fs *pflag.FlagSet) {
 	fs.DurationVar(&s.SuicideTimeout, "suicide-timeout", s.SuicideTimeout, "Self-terminate after this period of inactivity. Zero disables suicide watch.")
 	fs.IntVar(&s.ShutdownFD, "shutdown-fd", s.ShutdownFD, "File descriptor used to signal shutdown to external watchers, requires shutdown-fifo flag")
 	fs.StringVar(&s.ShutdownFIFO, "shutdown-fifo", s.ShutdownFIFO, "FIFO used to signal shutdown to external watchers, requires shutdown-fd flag")
-	fs.DurationVar(&s.LaunchGracePeriod, "launch-grace-period", s.LaunchGracePeriod, "Launch grace period after which launching tasks will be cancelled . Zero disables launch cancellation.")
+	fs.DurationVar(&s.LaunchGracePeriod, "launch-grace-period", s.LaunchGracePeriod, "Launch grace period after which launching tasks will be cancelled. Zero disables launch cancellation.")
 }
 
 // returns a Closer that should be closed to signal impending shutdown, but only if ShutdownFD
