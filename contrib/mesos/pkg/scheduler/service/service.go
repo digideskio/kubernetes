@@ -373,6 +373,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.E
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--v=%d", s.ExecutorLogV)) // this also applies to the minion
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--allow-privileged=%t", s.AllowPrivileged))
 	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--suicide-timeout=%v", s.ExecutorSuicideTimeout))
+	ci.Arguments = append(ci.Arguments, fmt.Sprintf("--launch-grace-period=%v", s.ExecutorLaunchGracePeriod))
 
 	if s.ExecutorBindall {
 		//TODO(jdef) determine whether hostname-override is really needed for bindall because
