@@ -148,6 +148,7 @@ load-balancer-ip
 log-flush-frequency
 long-running-request-regexp
 low-diskspace-threshold-mb
+launch-grace-period
 manifest-url
 manifest-url-header
 masquerade-all

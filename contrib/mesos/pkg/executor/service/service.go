@@ -69,8 +69,9 @@ type KubeletExecutorServer struct {
 
 func NewKubeletExecutorServer() *KubeletExecutorServer {
 	k := &KubeletExecutorServer{
-		KubeletServer:  app.NewKubeletServer(),
-		SuicideTimeout: config.DefaultSuicideTimeout,
+		KubeletServer:     app.NewKubeletServer(),
+		SuicideTimeout:    config.DefaultSuicideTimeout,
+		LaunchGracePeriod: config.DefaultLaunchGracePeriod,
 	}
 	if pwd, err := os.Getwd(); err != nil {
 		log.Warningf("failed to determine current directory: %v", err)
