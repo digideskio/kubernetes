@@ -83,6 +83,7 @@ executor-bindall
 executor-logv
 executor-path
 executor-suicide-timeout
+executor-launch-grace-period
 experimental-keystone-url
 experimental-prefix
 external-hostname

@@ -103,9 +103,10 @@ type SchedulerServer struct {
 	Checkpoint          bool
 	FailoverTimeout     float64
 
-	ExecutorLogV           int
-	ExecutorBindall        bool
-	ExecutorSuicideTimeout time.Duration
+	ExecutorLogV              int
+	ExecutorBindall           bool
+	ExecutorSuicideTimeout    time.Duration
+	ExecutorLaunchGracePeriod time.Duration
 
 	RunProxy     bool
 	ProxyBindall bool
@@ -167,10 +168,11 @@ func NewSchedulerServer() *SchedulerServer {
 		Address:         net.ParseIP("127.0.0.1"),
 		FailoverTimeout: time.Duration((1 << 62) - 1).Seconds(),
 
-		RunProxy:                 true,
-		ExecutorSuicideTimeout:   execcfg.DefaultSuicideTimeout,
-		DefaultContainerCPULimit: mresource.DefaultDefaultContainerCPULimit,
-		DefaultContainerMemLimit: mresource.DefaultDefaultContainerMemLimit,
+		RunProxy:                  true,
+		ExecutorSuicideTimeout:    execcfg.DefaultSuicideTimeout,
+		ExecutorLaunchGracePeriod: execcfg.DefaultLaunchGracePeriod,
+		DefaultContainerCPULimit:  mresource.DefaultDefaultContainerCPULimit,
+		DefaultContainerMemLimit:  mresource.DefaultDefaultContainerMemLimit,
 
 		MinionLogMaxSize:      minioncfg.DefaultLogMaxSize(),
 		MinionLogMaxBackups:   minioncfg.DefaultLogMaxBackups,
@@ -249,6 +251,7 @@ func (s *SchedulerServer) addCoreFlags(fs *pflag.FlagSet) {
 	fs.IntVar(&s.ExecutorLogV, "executor-logv", s.ExecutorLogV, "Logging verbosity of spawned minion and executor processes.")
 	fs.BoolVar(&s.ExecutorBindall, "executor-bindall", s.ExecutorBindall, "When true will set -address of the executor to 0.0.0.0.")
 	fs.DurationVar(&s.ExecutorSuicideTimeout, "executor-suicide-timeout", s.ExecutorSuicideTimeout, "Executor self-terminates after this period of inactivity. Zero disables suicide watch.")
+	fs.DurationVar(&s.ExecutorLaunchGracePeriod, "executor-launch-grace-period", s.ExecutorLaunchGracePeriod, "Launch grace period after which launching tasks will be cancelled. Zero disables launch cancellation.")
 
 	fs.BoolVar(&s.ProxyBindall, "proxy-bindall", s.ProxyBindall, "When true pass -proxy-bindall to the executor.")
 	fs.BoolVar(&s.RunProxy, "run-proxy", s.RunProxy, "Run the kube-proxy as a side process of the executor.")
