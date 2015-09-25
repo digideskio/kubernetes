@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package staticpods
+package podutil
 
 import (
 	"bytes"
@@ -26,7 +26,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 )
 
-func GZip(pods <-chan *api.Pod) ([]byte, error) {
+func Gzip(pods <-chan *api.Pod) ([]byte, error) {
 	return gzipList(List(pods))
 }
 
@@ -51,7 +51,7 @@ func gzipList(list *api.PodList) ([]byte, error) {
 	return zipped.Bytes(), nil
 }
 
-func GUnzip(gzipped []byte) <-chan *api.Pod {
+func Gunzip(gzipped []byte) <-chan *api.Pod {
 	return Stream(gunzipList(gzipped))
 }
 

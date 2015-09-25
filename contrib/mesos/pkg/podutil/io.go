@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package staticpods
+package podutil
 
 import (
 	"fmt"
@@ -91,7 +91,7 @@ func ReadFromDir(dirpath string) (<-chan *api.Pod, <-chan error) {
 				errors <- fmt.Errorf("error validating static pod file %q: %v", filename, err)
 				continue
 			}
-			annotate(&pod.ObjectMeta, map[string]string{meta.StaticPodFilename: f.Name()})
+			Annotate(&pod.ObjectMeta, map[string]string{meta.StaticPodFilename: f.Name()})
 			pods <- pod
 		}
 	}()

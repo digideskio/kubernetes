@@ -32,8 +32,8 @@ import (
 	mesos "github.com/mesos/mesos-go/mesosproto"
 	mutil "github.com/mesos/mesos-go/mesosutil"
 	"k8s.io/kubernetes/contrib/mesos/pkg/executor/messages"
+	"k8s.io/kubernetes/contrib/mesos/pkg/podutil"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
-	"k8s.io/kubernetes/contrib/mesos/pkg/staticpods"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/client/cache"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
@@ -279,10 +279,10 @@ func (k *KubernetesExecutor) InitializeStaticPodsSource(hostname string, sourceF
 	}
 
 	log.V(2).Infof("extracting static pods config to %s", k.staticPodsConfigPath)
-	annotator := staticpods.Annotate(map[string]string{
+	annotator := podutil.Annotator(map[string]string{
 		meta.BindingHostKey: hostname,
 	})
-	staticpods.WriteToDir(annotator.Do(staticpods.GUnzip(k.staticPodsConfig)), k.staticPodsConfigPath)
+	podutil.WriteToDir(annotator.Do(podutil.Gunzip(k.staticPodsConfig)), k.staticPodsConfigPath)
 
 	log.V(2).Infof("initializing static pods source factory, configured at path %q", k.staticPodsConfigPath)
 	sourceFactory()

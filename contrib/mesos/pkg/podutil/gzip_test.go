@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package staticpods
+package podutil
 
 import (
 	"reflect"
@@ -54,8 +54,8 @@ func TestGzipList(t *testing.T) {
 	amap := map[string]string{
 		"crazy": "horse",
 	}
-	annotator := Annotate(amap)
-	raw, err := GZip(annotator.Do(Stream(list, nil)))
+	annotator := Annotator(amap)
+	raw, err := Gzip(annotator.Do(Stream(list, nil)))
 	assert.NoError(t, err)
 
 	list2, err := gunzipList(raw)

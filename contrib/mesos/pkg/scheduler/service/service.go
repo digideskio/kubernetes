@@ -49,6 +49,7 @@ import (
 	execcfg "k8s.io/kubernetes/contrib/mesos/pkg/executor/config"
 	"k8s.io/kubernetes/contrib/mesos/pkg/hyperkube"
 	minioncfg "k8s.io/kubernetes/contrib/mesos/pkg/minion/config"
+	"k8s.io/kubernetes/contrib/mesos/pkg/podutil"
 	"k8s.io/kubernetes/contrib/mesos/pkg/profile"
 	"k8s.io/kubernetes/contrib/mesos/pkg/runtime"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler"
@@ -59,7 +60,6 @@ import (
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	mresource "k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/uid"
-	"k8s.io/kubernetes/contrib/mesos/pkg/staticpods"
 	"k8s.io/kubernetes/pkg/api/resource"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	clientauth "k8s.io/kubernetes/pkg/client/unversioned/auth"
@@ -438,7 +438,7 @@ func (s *SchedulerServer) prepareStaticPods() (data []byte, staticPodCPUs, stati
 		return
 	}
 
-	entries, errCh := staticpods.ReadFromDir(s.StaticPodsConfigPath)
+	entries, errCh := podutil.ReadFromDir(s.StaticPodsConfigPath)
 	go func() {
 		// we just skip file system errors for now, do our best to gather
 		// as many static pod specs as we can.
@@ -448,14 +448,14 @@ func (s *SchedulerServer) prepareStaticPods() (data []byte, staticPodCPUs, stati
 	}()
 
 	// validate cpu and memory limits, tracking the running totals in staticPod{CPUs,Mem}
-	validateResourceLimits := staticpods.Validator(
+	validateResourceLimits := StaticPodValidator(
 		s.DefaultContainerCPULimit,
 		s.DefaultContainerMemLimit,
 		&staticPodCPUs,
 		&staticPodMem,
 		!s.AccountForPodResources)
 
-	zipped, err := staticpods.GZip(validateResourceLimits.Do(entries))
+	zipped, err := podutil.Gzip(validateResourceLimits.Do(entries))
 	if err != nil {
 		log.Errorf("failed to generate static pod data: %v", err)
 		staticPodCPUs, staticPodMem = 0, 0
