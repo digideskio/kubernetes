@@ -30,7 +30,11 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 )
 
-func GZipPodList(list *api.PodList) ([]byte, error) {
+func GZip(pods <-chan *api.Pod) ([]byte, error) {
+	return gzipList(List(pods))
+}
+
+func gzipList(list *api.PodList) ([]byte, error) {
 	raw, err := v1.Codec.Encode(list)
 	if err != nil {
 		return nil, err
@@ -51,15 +55,11 @@ func GZipPodList(list *api.PodList) ([]byte, error) {
 	return zipped.Bytes(), nil
 }
 
-func GUnzipToDir(gzipped []byte, destDir string) error {
-	podlist, err := GUnzipPodList(gzipped)
-	if err != nil {
-		return err
-	}
-	return writePodsToFiles(podlist, destDir)
+func GUnzip(gzipped []byte) <-chan *api.Pod {
+	return Stream(gunzipList(gzipped))
 }
 
-func GUnzipPodList(gzipped []byte) (*api.PodList, error) {
+func gunzipList(gzipped []byte) (*api.PodList, error) {
 	zr, err := gzip.NewReader(bytes.NewReader(gzipped))
 	if err != nil {
 		return nil, err
@@ -84,14 +84,12 @@ func GUnzipPodList(gzipped []byte) (*api.PodList, error) {
 	return podlist, nil
 }
 
-func writePodsToFiles(pods *api.PodList, destDir string) error {
+func WriteToDir(pods <-chan *api.Pod, destDir string) error {
 	err := os.MkdirAll(destDir, 0660)
 	if err != nil {
 		return err
 	}
-
-	for i := range pods.Items {
-		p := &pods.Items[i]
+	for p := range pods {
 		filename, ok := p.Annotations[meta.StaticPodFilename]
 		if !ok {
 			log.Warningf("skipping static pod %s/%s that had no filename", p.Namespace, p.Name)
@@ -107,6 +105,7 @@ func writePodsToFiles(pods *api.PodList, destDir string) error {
 		if err != nil {
 			log.Errorf("failed to write static pod file %q: %v", destfile, err)
 		}
+		log.V(1).Infof("wrote static pod %s/%s to %s", p.Namespace, p.Name, destfile)
 	}
 	return nil
 }

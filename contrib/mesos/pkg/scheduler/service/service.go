@@ -319,7 +319,7 @@ func (s *SchedulerServer) serveFrameworkArtifactWithFilename(path string, filena
 	return hostURI
 }
 
-func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (podtask.Procurement, *mesos.ExecutorInfo, *uid.UID, error) {
+func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (*mesos.ExecutorInfo, *uid.UID, error) {
 	ci := &mesos.CommandInfo{
 		Shell: proto.Bool(false),
 	}
@@ -329,7 +329,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (podtask.
 		ci.Uris = append(ci.Uris, &mesos.CommandInfo_URI{Value: proto.String(uri), Executable: proto.Bool(true)})
 		ci.Value = proto.String(fmt.Sprintf("./%s", executorCmd))
 	} else if !hks.FindServer(hyperkube.CommandMinion) {
-		return nil, nil, nil, fmt.Errorf("either run this scheduler via km or else --executor-path is required")
+		return nil, nil, fmt.Errorf("either run this scheduler via km or else --executor-path is required")
 	} else {
 		if strings.Index(s.KMPath, "://") > 0 {
 			// URI could point directly to executable, e.g. hdfs:///km
@@ -415,7 +415,7 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (podtask.
 	}
 
 	// Check for staticPods
-	spp, staticPodCPUs, staticPodMem := s.prepareStaticPods()
+	data, staticPodCPUs, staticPodMem := s.prepareStaticPods()
 
 	execInfo.Resources = []*mesos.Resource{
 		mutil.NewScalarResource("cpus", float64(s.MesosExecutorCPUs)+staticPodCPUs),
@@ -427,18 +427,19 @@ func (s *SchedulerServer) prepareExecutorInfo(hks hyperkube.Interface) (podtask.
 	ehash := hashExecutorInfo(execInfo)
 	eid := uid.New(ehash, execcfg.DefaultInfoID)
 	execInfo.ExecutorId = &mesos.ExecutorID{Value: proto.String(eid.String())}
+	execInfo.Data = data
 
-	return spp, execInfo, eid, nil
+	return execInfo, eid, nil
 }
 
-func (s *SchedulerServer) prepareStaticPods() (spp podtask.Procurement, staticPodCPUs, staticPodMem float64) {
+func (s *SchedulerServer) prepareStaticPods() (data []byte, staticPodCPUs, staticPodMem float64) {
 	// TODO(sttts): add a directory watch and tell running executors about updates
 	if s.StaticPodsConfigPath == "" {
 		return
 	}
 
 	// validate cpu and memory limits, tracking the running totals in staticPod{CPUs,Mem}
-	validateResourceLimitsOf := staticpods.MakeValidator(
+	validateResourceLimitsOf := staticpods.Validator(
 		s.DefaultContainerCPULimit,
 		s.DefaultContainerMemLimit,
 		&staticPodCPUs,
@@ -454,11 +455,12 @@ func (s *SchedulerServer) prepareStaticPods() (spp podtask.Procurement, staticPo
 		}
 	}()
 
-	// collect a pre-validated list of static pod specs that serve as templates for static pod procurement
-	spp = staticpods.MakeProcurement(entries)
-	if spp == nil {
-		log.Warningf("no valid static pod specifications were found at %q", s.StaticPodsConfigPath)
+	zipped, err := staticpods.GZip(entries)
+	if err != nil {
+		log.Errorf("failed to generate static pod data: %v", err)
 		staticPodCPUs, staticPodMem = 0, 0
+	} else {
+		data = zipped
 	}
 	return
 }
@@ -644,7 +646,7 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		log.Warningf("user-specified reconcile cooldown too small, defaulting to %v", s.ReconcileCooldown)
 	}
 
-	staticPodProcurement, executor, eid, err := s.prepareExecutorInfo(hks)
+	executor, eid, err := s.prepareExecutorInfo(hks)
 	if err != nil {
 		log.Fatalf("misconfigured executor: %v", err)
 	}
@@ -662,14 +664,13 @@ func (s *SchedulerServer) bootstrap(hks hyperkube.Interface, sc *schedcfg.Config
 		podtask.DefaultPredicate,
 		podtask.NewDefaultProcurement(
 			s.DefaultContainerCPULimit,
-			s.DefaultContainerMemLimit,
-			staticPodProcurement))
+			s.DefaultContainerMemLimit))
 
 	// downgrade allocation strategy if user disables "account-for-pod-resources"
 	if !s.AccountForPodResources {
 		as = scheduler.NewAllocationStrategy(
 			podtask.DefaultMinimalPredicate,
-			podtask.NewDefaultMinimalProcurement(staticPodProcurement))
+			podtask.NewDefaultMinimalProcurement())
 	}
 
 	fcfs := scheduler.NewFCFSPodScheduler(as)

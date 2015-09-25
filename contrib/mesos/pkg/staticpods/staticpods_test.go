@@ -25,7 +25,7 @@ import (
 	"k8s.io/kubernetes/pkg/api/v1"
 )
 
-func TestGZipPodList(t *testing.T) {
+func TestGzipList(t *testing.T) {
 	// pod spec defaults are written during deserialization, this is what we
 	// expect them to be
 	period := int64(v1.DefaultTerminationGracePeriodSeconds)
@@ -50,13 +50,20 @@ func TestGZipPodList(t *testing.T) {
 			},
 		},
 	}
-	raw, err := GZipPodList(list)
+
+	amap := map[string]string{
+		"crazy": "horse",
+	}
+	annotator := Annotate(amap)
+	raw, err := GZip(annotator.Do(Stream(list, nil)))
 	assert.NoError(t, err)
 
-	list2, err := GUnzipPodList(raw)
+	list2, err := gunzipList(raw)
 	assert.NoError(t, err)
 
 	list.Items[0].Spec = defaultSpec
+	list.Items[0].Annotations = amap
 	list.Items[1].Spec = defaultSpec
+	list.Items[1].Annotations = amap
 	assert.True(t, reflect.DeepEqual(*list, *list2), "expected %+v instead of %+v", *list, *list2)
 }

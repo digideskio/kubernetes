@@ -271,7 +271,7 @@ func (k *KubernetesExecutor) onInitialRegistration() {
 
 // InitializeStaticPodsSource blocks until initial regstration is complete and
 // then creates a static pod source using the given factory func.
-func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func()) {
+func (k *KubernetesExecutor) InitializeStaticPodsSource(hostname string, sourceFactory func()) {
 	<-k.initialRegComplete
 
 	if k.staticPodsConfig == nil {
@@ -279,11 +279,10 @@ func (k *KubernetesExecutor) InitializeStaticPodsSource(sourceFactory func()) {
 	}
 
 	log.V(2).Infof("extracting static pods config to %s", k.staticPodsConfigPath)
-	err := staticpods.GUnzipToDir(k.staticPodsConfig, k.staticPodsConfigPath)
-	if err != nil {
-		log.Errorf("Failed to extract static pod config: %v", err)
-		return
-	}
+	annotator := staticpods.Annotate(map[string]string{
+		meta.BindingHostKey: hostname,
+	})
+	staticpods.WriteToDir(annotator.Do(staticpods.GUnzip(k.staticPodsConfig)), k.staticPodsConfigPath)
 
 	log.V(2).Infof("initializing static pods source factory, configured at path %q", k.staticPodsConfigPath)
 	sourceFactory()

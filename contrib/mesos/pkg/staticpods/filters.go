@@ -62,6 +62,8 @@ func tryDecodeSinglePod(data []byte, defaultFn defaultFunc) (parsed bool, pod *a
 
 type FilterFunc func(pod *api.Pod) (bool, error)
 
+type Filters []FilterFunc
+
 func (filter FilterFunc) ReadPodsInDir(dirpath string) (<-chan *api.Pod, <-chan error) {
 	pods := make(chan *api.Pod)
 	errors := make(chan error)
@@ -111,7 +113,7 @@ func (filter FilterFunc) ReadPodsInDir(dirpath string) (<-chan *api.Pod, <-chan 
 	return pods, errors
 }
 
-func MakeValidator(limitCPU resource.CPUShares, limitMem resource.MegaBytes, accumCPU, accumMem *float64, minimalResources bool) FilterFunc {
+func Validator(limitCPU resource.CPUShares, limitMem resource.MegaBytes, accumCPU, accumMem *float64, minimalResources bool) FilterFunc {
 	return FilterFunc(func(pod *api.Pod) (bool, error) {
 		// TODO(sttts): allow unlimited static pods as well and patch in the default resource limits
 		unlimitedCPU := resource.LimitPodCPU(pod, limitCPU)
@@ -149,23 +151,33 @@ func annotate(meta *api.ObjectMeta, kv map[string]string) {
 	}
 }
 
-func MakeProcurement(pods <-chan *api.Pod) podtask.Procurement {
-	// entries is a pre-validated list of static pod specs that serve as templates for the static pod builder func
-	return podtask.StaticPodProcurement(func(assignedSlave string) ([]byte, error) {
-		applyBindingsTo := FilterFunc(func(pod *api.Pod) (bool, error) {
-			// add binding annotation so that static pods aren't picked up by the main scheduling loop.
-			// static pods are always completely managed by the kubelet.
-			annotate(&pod.ObjectMeta, map[string]string{meta.BindingHostKey: assignedSlave})
-			return true, nil
-		})
-		return GZipPodList(applyBindingsTo.list(pods))
+func Annotate(m map[string]string) FilterFunc {
+	return FilterFunc(func(pod *api.Pod) (bool, error) {
+		annotate(&pod.ObjectMeta, m)
+		return true, nil
 	})
 }
 
-func (filter FilterFunc) do(in <-chan *api.Pod) <-chan *api.Pod {
+func Stream(list *api.PodList, err error) <-chan *api.Pod {
 	out := make(chan *api.Pod)
 	go func() {
-		close(out)
+		defer close(out)
+		if err != nil {
+			log.Errorf("failed to obtain pod list: %v", err)
+			return
+		}
+		for _, pod := range list.Items {
+			pod := pod
+			out <- &pod
+		}
+	}()
+	return out
+}
+
+func (filter FilterFunc) Do(in <-chan *api.Pod) <-chan *api.Pod {
+	out := make(chan *api.Pod)
+	go func() {
+		defer close(out)
 		for pod := range in {
 			if ok, err := filter(pod); err != nil {
 				log.Errorf("pod failed selection: %v", err)
@@ -177,7 +189,7 @@ func (filter FilterFunc) do(in <-chan *api.Pod) <-chan *api.Pod {
 	return out
 }
 
-func (filter FilterFunc) list(pods <-chan *api.Pod) *api.PodList {
+func List(pods <-chan *api.Pod) *api.PodList {
 	list := &api.PodList{}
 	for p := range pods {
 		list.Items = append(list.Items, *p)
