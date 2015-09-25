@@ -21,11 +21,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 
-	log "github.com/golang/glog"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/pkg/api"
 	"k8s.io/kubernetes/pkg/api/v1"
 )
@@ -82,30 +78,4 @@ func gunzipList(gzipped []byte) (*api.PodList, error) {
 	}
 
 	return podlist, nil
-}
-
-func WriteToDir(pods <-chan *api.Pod, destDir string) error {
-	err := os.MkdirAll(destDir, 0660)
-	if err != nil {
-		return err
-	}
-	for p := range pods {
-		filename, ok := p.Annotations[meta.StaticPodFilename]
-		if !ok {
-			log.Warningf("skipping static pod %s/%s that had no filename", p.Namespace, p.Name)
-			continue
-		}
-		raw, err := v1.Codec.Encode(p)
-		if err != nil {
-			log.Errorf("failed to encode static pod as v1 object: %v", err)
-			continue
-		}
-		destfile := filepath.Join(destDir, filename)
-		err = ioutil.WriteFile(destfile, raw, 0660)
-		if err != nil {
-			log.Errorf("failed to write static pod file %q: %v", destfile, err)
-		}
-		log.V(1).Infof("wrote static pod %s/%s to %s", p.Namespace, p.Name, destfile)
-	}
-	return nil
 }

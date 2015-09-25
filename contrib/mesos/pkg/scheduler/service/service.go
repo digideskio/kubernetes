@@ -438,15 +438,7 @@ func (s *SchedulerServer) prepareStaticPods() (data []byte, staticPodCPUs, stati
 		return
 	}
 
-	// validate cpu and memory limits, tracking the running totals in staticPod{CPUs,Mem}
-	validateResourceLimitsOf := staticpods.Validator(
-		s.DefaultContainerCPULimit,
-		s.DefaultContainerMemLimit,
-		&staticPodCPUs,
-		&staticPodMem,
-		!s.AccountForPodResources)
-
-	entries, errCh := validateResourceLimitsOf.ReadPodsInDir(s.StaticPodsConfigPath)
+	entries, errCh := staticpods.ReadFromDir(s.StaticPodsConfigPath)
 	go func() {
 		// we just skip file system errors for now, do our best to gather
 		// as many static pod specs as we can.
@@ -455,7 +447,15 @@ func (s *SchedulerServer) prepareStaticPods() (data []byte, staticPodCPUs, stati
 		}
 	}()
 
-	zipped, err := staticpods.GZip(entries)
+	// validate cpu and memory limits, tracking the running totals in staticPod{CPUs,Mem}
+	validateResourceLimits := staticpods.Validator(
+		s.DefaultContainerCPULimit,
+		s.DefaultContainerMemLimit,
+		&staticPodCPUs,
+		&staticPodMem,
+		!s.AccountForPodResources)
+
+	zipped, err := staticpods.GZip(validateResourceLimits.Do(entries))
 	if err != nil {
 		log.Errorf("failed to generate static pod data: %v", err)
 		staticPodCPUs, staticPodMem = 0, 0

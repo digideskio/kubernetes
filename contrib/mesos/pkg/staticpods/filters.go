@@ -18,100 +18,18 @@ package staticpods
 
 import (
 	"fmt"
-	"io/ioutil"
-	"path/filepath"
 
 	log "github.com/golang/glog"
-	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/meta"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/podtask"
 	"k8s.io/kubernetes/contrib/mesos/pkg/scheduler/resource"
 	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/validation"
-	utilyaml "k8s.io/kubernetes/pkg/util/yaml"
 )
 
 type defaultFunc func(pod *api.Pod) error
 
-// tryDecodeSinglePod was copied from pkg/kubelet/config/common.go v1.0.5
-func tryDecodeSinglePod(data []byte, defaultFn defaultFunc) (parsed bool, pod *api.Pod, err error) {
-	// JSON is valid YAML, so this should work for everything.
-	json, err := utilyaml.ToJSON(data)
-	if err != nil {
-		return false, nil, err
-	}
-	obj, err := api.Scheme.Decode(json)
-	if err != nil {
-		return false, pod, err
-	}
-	// Check whether the object could be converted to single pod.
-	if _, ok := obj.(*api.Pod); !ok {
-		err = fmt.Errorf("invalid pod: %+v", obj)
-		return false, pod, err
-	}
-	newPod := obj.(*api.Pod)
-	// Apply default values and validate the pod.
-	if err = defaultFn(newPod); err != nil {
-		return true, pod, err
-	}
-	if errs := validation.ValidatePod(newPod); len(errs) > 0 {
-		err = fmt.Errorf("invalid pod: %v", errs)
-		return true, pod, err
-	}
-	return true, newPod, nil
-}
-
 type FilterFunc func(pod *api.Pod) (bool, error)
 
 type Filters []FilterFunc
-
-func (filter FilterFunc) ReadPodsInDir(dirpath string) (<-chan *api.Pod, <-chan error) {
-	pods := make(chan *api.Pod)
-	errors := make(chan error)
-	go func() {
-		defer close(pods)
-		defer close(errors)
-		files, err := ioutil.ReadDir(dirpath)
-		if err != nil {
-			errors <- fmt.Errorf("error scanning static pods directory: %q: %v", dirpath, err)
-			return
-		}
-		for _, f := range files {
-			if f.IsDir() || f.Size() == 0 {
-				continue
-			}
-			filename := filepath.Join(dirpath, f.Name())
-			log.V(1).Infof("reading static pod conf from file %q", filename)
-
-			data, err := ioutil.ReadFile(filename)
-			if err != nil {
-				errors <- fmt.Errorf("failed to read static pod file: %q: %v", filename, err)
-				continue
-			}
-
-			keep := false
-			defaultFn := func(pod *api.Pod) (err error) {
-				keep, err = filter(pod)
-				return
-			}
-			parsed, pod, err := tryDecodeSinglePod(data, defaultFn)
-			if !parsed {
-				if err != nil {
-					errors <- fmt.Errorf("error parsing static pod file %q: %v", filename, err)
-				}
-				continue
-			}
-			if err != nil {
-				errors <- fmt.Errorf("error validating static pod file %q: %v", filename, err)
-				continue
-			}
-			if keep {
-				annotate(&pod.ObjectMeta, map[string]string{meta.StaticPodFilename: f.Name()})
-				pods <- pod
-			}
-		}
-	}()
-	return pods, errors
-}
 
 func Validator(limitCPU resource.CPUShares, limitMem resource.MegaBytes, accumCPU, accumMem *float64, minimalResources bool) FilterFunc {
 	return FilterFunc(func(pod *api.Pod) (bool, error) {
