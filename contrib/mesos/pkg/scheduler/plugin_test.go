@@ -550,8 +550,8 @@ func TestPlugin_New(t *testing.T) {
 	assert.NotNil(p)
 }
 
-// Test to create the scheduler plugin with the config returned by the scheduler,
-// and play through the whole life cycle of the plugin while creating pods, deleting
+// TestPlugin_LifeCycle creates a scheduler plugin with the config returned by the scheduler,
+// and plays through the whole life cycle of the plugin while creating pods, deleting
 // and failing them.
 func TestPlugin_LifeCycle(t *testing.T) {
 	assert := &EventAssertions{*assert.New(t)}
