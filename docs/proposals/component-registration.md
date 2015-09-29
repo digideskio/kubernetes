@@ -44,13 +44,16 @@ Documentation for other releases can be found at
   - [Problems](#problems)
     - [ComponentStatuses](#componentstatuses)
     - [Endpoints](#endpoints)
+  - [Users](#users)
   - [Use Cases](#use-cases)
     - [Deployment](#deployment)
     - [Debugging](#debugging)
+    - [Discovery](#discovery)
     - [Notification](#notification)
     - [Reporting](#reporting)
     - [Self-Healing](#self-healing)
   - [Design](#design)
+    - [Phased Changes](#phased-changes)
     - [API Changes](#api-changes)
       - [API Types](#api-types)
     - [Kubectl (CLI)](#kubectl-cli)
@@ -79,9 +82,11 @@ A Kubernetes Cluster **Component**...
 - May be deployed on different (network accessible) machines
 - May be upgraded over time
 
-The **Primary Components** currently include apiserver, controller-manager, and scheduler. The lifecycle of these components is managed by some external system. These components are required for Kubernetes to function.
+The **External Components** are components that are deployed and lifecycle managed by some external system.
 
-The **Addon Components** currently include kube-dns and kube-ui. The lifecycle of these components is managed by the kubernetes cluster that they provide functionality to. These components add functionality, but are not required for Kubernetes to function. Kubernetes currently ships with some of these required for "conformance", but they're technically not required for minimal orchestration and scheduling.
+The **Addon Components** are components that are deployed and lifecycle managed by the Kubernetes to which they provide functionality. These components must be optional in order for them to be deployable by Kubernetes (at least until an HA bootstrapping method is developed). Kubernetes conformance tests current require some of these (e.g. kube-dns), but they are not required for orchestration and scheduling functionality.
+
+The **Primary Components** (currently apiserver, controller-manager, and scheduler) are components that are required for orchestration and scheduling functionality. These components are currently all External Components but may become Addon Components, once an HA bootstrapping method is developed.
 
 The"**Hyperkube** is a single binary that can be run as each of the three primary component binaries. Hyperkube may also refer to the set (or pod) of primary component containers or the (virtual) machine that those containers run on. Not all Kubernetes deployments use or should be required to use the Hyperkube.
 
@@ -113,7 +118,7 @@ The goal of this proposal is to move Kubernetes a little closer to each of the f
 - **Extensibility**
   - Allow optional and third party components to be added to the cluster
 - **Deployment Flexibility**
-  - Allow components to be deployed on different machines and in different availability zones
+  - Allow external components to be deployed on different machines (or even different availability zones)
 - **Operability**
   - Expose a filterable list of component conditions on the apiserver to simplify collection of component conditions
   - Expose a filterable list of components on the apiserver to see which components are installed/deployed
@@ -145,6 +150,12 @@ The goal of this proposal is to move Kubernetes a little closer to each of the f
 1. Endpoints doesn't distinguish between Spec and Status. In most other resources the Spec is the desired state and the Status is current (or last known) state. For more details, see the [API Conventions](../devel/api-conventions.md#spec-and-status).
 2. Endpoints is both a dynamically populated resource AND a manually populated resource. This confusion of ownership makes it hard to use, hard to describe, overly complicated, and inconsistent with other API resources.
 
+## Users
+
+Here we'll define several Kubernetes user types for the purposes of clarifying Use Cases.
+
+- **Kubernetes Operator** - one who manages/administers a running Kubernetes cluster (including deployment)
+- **Kubernetes Client** - one who queries the Kubernetes API directly or with kubectl (without requiring admin privileges)
 
 ## Use Cases
 
@@ -153,43 +164,41 @@ This proposal primarily covers features that can be achieved internally by Kuber
 
 ### Deployment
 
-As a k8s operator, I want a to be able to add/remove new components (instances or types) to a new or running cluster (ideally without manually registering it with the apiserver).
+As a Kubernetes Operator, I want a to be able to add/remove new components (instances or types) to a new or running cluster (ideally without manually registering it with the apiserver).
 
-As a k8s operator, I want a kubectl command that allows me to validate that the cluster has been deployed and is fully functional.
+As a Kubernetes Operator, I want a kubectl command that allows me to validate that the cluster has been deployed and is fully functional.
 
-As a k8s operator, I want a kubectl command that allows me to check which components are deployed/installed on a specific cluster in order to infer which features it supports.
-
-Note: Inferring features from components isn't very useful with vanilla k8s, but becomes more useful as 3rd party or optional components are added (e.g. OpenShift) and/or if components-controller is split into multiple components.
+As a Kubernetes Operator, I want a kubectl command that allows me to check which components are deployed/installed on a specific cluster.
 
 ### Debugging
 
-As a k8s operator, I want a single endpoint (and kubectl command) where I can see the current condition of the cluster so that I can debug observed failures (dropped connections, unresponsiveness, etc.).
+As a Kubernetes Operator, I want a kubectl command that shows me the current condition of the cluster's components, so that I can debug observed failures.
 
-Note: The endpoint should contain cause where possible, but at least the current condition of the components.
+### Discovery
+
+As a Kubernetes Client, I want kubectl command that lists (optionally namespaced) services/components that provide specific functionality (e.g. DNS, logging, metrics, or cluster backup).
 
 ### Notification
 
-As a k8s operator, I want to be notified when the cluster requires human intervention so that I can intervene.
+As a Kubernetes Operator, I want to be notified when the cluster requires human intervention, so that I can intervene.
 
-As an external notification system (e.g. PagerDuty), I want an endpoint that responds to regular requests with the current cluster condition so that I can determine (with my own rule set) when to notify the k8s operator.
-
-Note: What condition requires human intervention is not a rule set that can be hard-coded, is likely to be different for each cloud platform, changes based on component configuration, and is likely to require a time-series database.
+As an service that provides notifications (e.g. PagerDuty), I want an to retrieve the current condition of the cluster's components, so that I can determine (with my own rule set) when to notify the Kubernetes Operator.
 
 ### Reporting
 
-As a k8s operator, I want to see a report/graph of the readiness/uptime/availability of the cluster over time so that I can make/satisfy SLAs.
+As a Kubernetes Operator, I want to see a report/graph of the readiness/uptime/availability of the cluster over time, so that I can make/satisfy SLAs.
 
-Note: At least requires a time-series database and probably a reporting engine.
+As an service that provides reports/graphs (e.g. DataDog), I want an to retrieve status metrics for each component, so that I can record and report on the metrics over time.
 
 ### Self-Healing
 
-As an k8s operator, I want the cluster to self-heal when individual components crash so that I don't get notified or need to intervene.
+As an Kubernetes Operator, I want the cluster to self-heal when individual components crash so that I don't get notified or need to intervene.
 
-As a local process monitoring tool (e.g. monit), I want to be able to determine the condition of the component process I am monitoring to determine if it needs to be restarted.
+As a process monitoring tool (e.g. monit), I want to be able to determine the condition of the component process I am monitoring to determine if it needs to be restarted.
 
-As a remote container/vm monitoring tool (e.g. bosh monitor), I want to be able to determine the health of the component container/vm I am monitoring.
+As a container/vm monitoring tool (e.g. Marathon, Amazon CloudWatch), I want to be able to determine the health of the component in the container/vm I am monitoring.
 
-Note: Self-healing requires knowing how to deploy the cluster components, which is different for each cloud platform and changes based on component configuration.
+Note: Self-healing external components requires knowing how to deploy the external components, which is different for each cloud platform and changes based on component configuration. This is different that self-healing addon components, which is covered by the Kubernetes replication controller.
 
 
 ## Design
@@ -199,6 +208,33 @@ Unfortunately, ComponentStatuses is almost not worth the effort to fix. Instead 
 Since it's seemingly impossible to fix Endpoints Problem \#1 without breaking reverse compatibility, this proposal punts on \#1 (until v2 allows reverse-incompatibility) and focuses on fixing \#2 for now. #13778 handles increasing the scope of Endpoints to cover both Ready and NotReady addresses, which is better than nothing, but not as flexible as having an array of conditions, like other -Status API resources.
 
 To fix Endpoints Problem \#2, this proposal moves the specification (and status) of external service provider addresses to its own namespaced API resource (provisionally called **ExternalServiceTarget**). Endpoints Controller will then continue to manage the lifecycle (create/update/delete) of Internal Endpoints based on a selection of Pod instances, but will also do the same for External Endpoints based on a selection of ExternalServiceTargets defined in ServiceSpec.TargetSelector. Endpoints then becomes a (conceptually) read-only API for the user. Endpoints can't actually be read-only, because the Endpoints Controller needs access, but write access may eventually be limited to admin/operator-only.
+
+
+### Phased Changes
+
+Since the changes here are complex, they will be implemented in phases.
+
+1. Simplify Endpoints
+  - Add a new API resource (ExternalServiceTarget) that represents a non-pod service provider
+    - Specify a network route (host[:port])
+    - Specify liveness and readiness probe methods
+    - Store the last known status (list of conditions)
+  - Add (or modify) a controller to probe ExternalServiceTargets and update their status
+  - Update how Endpoints are managed
+    - EITHER update the EndpointsController to manage Endpoints based on both Pod and ExternalServiceTarget status
+    - OR modify Endpoints to be a read-only view of service providers (Pod/ExternalServiceTarget) and delete the Endpoints controller
+2. Register component ExternalServiceTargets
+  - Update all components to use consistent namespacing and component labeling
+  - EITHER update "external" components to self-register their ExternalServiceTarget
+  - OR update deployment automation to register deployed components as ExternalServiceTargets
+3. Rewrite ComponentStatuses
+  - Dynamically display a list of components and their readiness (filtered Pod/ExternalServiceTarget or Endpoints query) on `/componentstatuses`
+4. Add Service Status Conditions
+  - Add Service condition policies (all, half+1, at least n) that can be specified for each Service
+  - Add (or modify) a controller to update the Service status conditions based on aggregate provider (Pod/ExternalServiceTarget) status
+  - Make sure Services can be filtered by status conditions (e.g. all ready services with label x)
+  - Deprecate ComponentStatuses and move users to filtered "component" querying of Service Status or Pod/ExternalServiceTarget (if they need the status of individual components, not just the aggregates)
+5. Expand Service or add new a new API resource to allow discovery of API group providers
 
 
 ### API Changes
@@ -222,7 +258,7 @@ To fix Endpoints Problem \#2, this proposal moves the specification (and status)
     - Includes both Ready & NotReady endpoints
     - Supports multiple and future conditions (in an extensible Conditions array)
 2. Add a new field ServiceSpec.TargetSelector that selects a subset of ExternalServiceTargets
-  - Analogous to the ServiceSpec.Selector-Pod relationship
+  - Analogous to the ServiceSpec.Selector-to-Pod relationship
 3. Add a new ExternalServiceTarget Controller that handles probing ExternalServiceTargets
   - Probe results update ExternalServiceTarget.Status.Conditions
 4. Modify Endpoints Controller to manage ExternalServiceTarget Endpoints
