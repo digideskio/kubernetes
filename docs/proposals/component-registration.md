@@ -276,9 +276,70 @@ Since the changes here are complex, they will be implemented in phases.
 
 #### API Types
 
-The following is a draft of how the Component model might look.
+The following is a draft of how the API models might change.
 
-TODO
+```
+type ExternalServiceTarget struct {
+	TypeMeta
+	ObjectMeta
+	Spec ExternalServiceTargetSpec
+	Status ExternalServiceTargetStatus
+}
+
+type ExternalServiceTargetSpec struct {
+	Host string
+	Ports []ExternalServiceTargetPort
+	LivenessProbe *Probe
+	ReadinessProbe *Probe
+}
+
+type ExternalServiceTargetPort struct {
+	Name string // optional - for mapping from ServicePort
+	Protocol Protocol // TCP, UDP
+	Port int
+}
+
+type ExternalServiceTargetStatus struct {
+	Conditions []ExternalServiceTargetCondition
+}
+
+type ExternalServiceTargetCondition struct {
+	Type ExternalServiceTargetConditionType // Readiness, Liveness
+	Status ConditionStatus // True, False, Unknown
+	LastUpdateTime util.Time
+	LastTransitionTime util.Time
+	Reason string
+	Message string
+}
+
+type ExternalServiceTargetList struct {
+	TypeMeta
+	ListMeta
+	Items []ExternalServiceTarget
+}
+```
+
+```
+type ServiceSpec struct {
+	...
+	TargetSelector map[string]string
+}
+
+type ServiceStatus struct {
+	...
+	Conditions []ServiceCondition
+}
+
+type ServiceCondition struct {
+	Type ServiceConditionType // Readiness, Liveness
+	Status ConditionStatus // True, False, Unknown
+	LastUpdateTime util.Time
+	LastTransitionTime util.Time
+	Reason string
+	Message string
+}
+```
+
 
 ### Kubectl (CLI)
 
